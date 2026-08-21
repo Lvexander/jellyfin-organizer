@@ -400,3 +400,7 @@ cd jellyfin-organizer
 ````
 
 and the examples use **`Sousou no Frieren`** and **`[Example]`** rather than the real download-site name.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
