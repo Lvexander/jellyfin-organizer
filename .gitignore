@@ -1,0 +1,38 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# IDEs / editors
+.idea/
+.vscode/
+
+# Local environment
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.temp
