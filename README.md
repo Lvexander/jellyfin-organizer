@@ -1,4 +1,4 @@
-# Jellyfin File Renamer
+# Jellyfin Anime/Movie/TV Shows Organizer
 
 A small Python CLI tool for organizing downloaded anime episodes into a
 [Jellyfin](https://jellyfin.org/) compatible folder structure.
