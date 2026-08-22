@@ -1,176 +1,138 @@
 # Jellyfin Anime/Movie/TV Shows Organizer
 
-A small Python CLI tool for organizing downloaded anime episodes into a
-[Jellyfin](https://jellyfin.org/) compatible folder structure.
+A small Python CLI tool for organizing downloaded anime, movies, and TV episodes into a Jellyfin-compatible folder structure.
 
-It recursively scans a target folder, detects episode numbers, cleans release
-metadata from filenames, renames the files, and organizes them into Season
-folders.
+It recursively scans a source folder, detects episode numbers, cleans release metadata, renames files, and organizes them into Season folders.
 
 ## Features
 
-- Recursively searches for video files.
-- Supports common video extensions:
-  - `.mkv`
-  - `.mp4`
-  - `.avi`
-  - `.mov`
-  - `.wmv`
-  - `.m4v`
-  - `.ts`
-  - `.webm`
-  - `.flv`
-- Removes everything inside square brackets, including the brackets.
-- Removes common video resolutions:
-  - `240p`
-  - `360p`
-  - `480p`
-  - `576p`
-  - `720p`
-  - `900p`
-  - `1080p`
-  - `1440p`
-  - `2160p`
-  - `4320p`
-  - `4K`
-  - `8K`
-- Removes common release metadata such as:
-  - `WEB-DL`
-  - `WEBRip`
-  - `BluRay`
-  - `BDRip`
-  - `HDTV`
-  - `x264`
-  - `x265`
-  - `HEVC`
-  - `AAC`
-  - `FLAC`
-  - `Atmos`
-  - `END`
-  - `FINAL`
-- Detects several episode naming formats:
-  - `S01E01`
-  - `E01`
-  - `EP01`
-  - `Episode 01`
-  - `Anime - 01`
-  - `Anime - 01 END`
-- Automatically places `OVA`, `Movie`, and `Special` files into `Season 00`.
-- Automatically numbers multiple special episodes.
-- Shows the planned operations before making changes.
-- Requires explicit user confirmation before modifying files.
-- Moves organized files into a new anime folder.
-- Deletes the original source folder after successful execution.
-- Protects against deleting the source folder when a destination file already
-  exists.
+* Recursively searches for supported video files.
+* Supports common formats such as `.mkv`, `.mp4`, `.avi`, `.mov`, `.wmv`, `.m4v`, `.ts`, `.webm`, and `.flv`.
+* Cleans common release metadata and resolutions from filenames.
+* Detects common episode formats:
+
+  * `S01E01`
+  * `E01`
+  * `EP01`
+  * `Episode 01`
+  * `Anime - 01`
+* Supports optional manual season input.
+* Automatically detects `OVA`, `Movie`, and `Special` content as `Season 00`.
+* Automatically numbers multiple special episodes.
+* Shows a preview before making changes.
+* Requires explicit confirmation before moving files.
+* Deletes the original source folder after successful execution.
+* Prevents source deletion when a destination file conflict is detected.
 
 ## Requirements
 
-- Python 3.10 or newer
-- No external Python dependencies
+* Python 3.10+
+* No external dependencies.
 
 The script only uses Python's standard library.
 
 ## Installation
 
-Clone the repository:
-
 ```bash
 git clone git@github.com:Lvexander/jellyfin-organizer.git
 cd jellyfin-organizer
-````
+```
 
 No package installation or virtual environment is required.
 
 ## Usage
 
-The repository directory can be passed directly to Python.
-
-For example:
-
 ```bash
-python3 ~/Code/jellyfin-organizer \
+python3 ~/Code/jellyfin-organizer/organize.py \
     "~/Downloads/[Example] Sousou no Frieren + SP" \
     "Sousou no Frieren"
 ```
 
-The script first performs a dry run.
-
-It will:
-
-1. Find all supported video files.
-2. Clean their filenames.
-3. Detect their season and episode numbers.
-4. Show the planned destination for every file.
-5. Ask for confirmation before making any changes.
-
-Example confirmation:
+The script will ask for an optional season:
 
 ```text
-======================================================================
-CONFIRMATION
-======================================================================
-The files above are about to be moved and renamed.
+Season number/name [Enter = auto-detect]:
+```
 
-WARNING:
-The entire original source folder will be deleted
-after processing, including any files that were skipped.
+You can enter:
 
-This deletion cannot be undone.
+```text
+2
+02
+Season 2
+Season 02
+S2
+S02
+```
 
+Press **Enter** to use automatic season detection.
+
+### Season behavior
+
+If a season is manually entered, files without an explicit season use the specified season.
+
+For example, entering `S2`:
+
+```text
+Sousou no Frieren - 01.mkv
+Sousou no Frieren - 02.mkv
+```
+
+produces:
+
+```text
+Season 02/
+├── Sousou no Frieren - S02E01.mkv
+└── Sousou no Frieren - S02E02.mkv
+```
+
+An explicit season in the filename takes priority over the manual input:
+
+```text
+Sousou no Frieren S01E01.mkv
+```
+
+will still be placed in `Season 01` even if `S2` was entered.
+
+## Preview and Confirmation
+
+The script performs a preview before making any changes.
+
+It shows:
+
+* Source file
+* Cleaned filename
+* Detected season/episode
+* Destination path
+
+It then asks:
+
+```text
 Proceed with these changes? [y/N]:
 ```
 
-The default answer is **No**. Pressing Enter without typing `y` or `yes`
-cancels the operation.
-
-### Execute
-
-If everything looks correct, type:
-
-```text
-y
-```
-
-at the confirmation prompt.
+The default is **No**. Pressing Enter cancels the operation.
 
 There is no `--execute` flag.
 
-Once confirmed, the script moves and renames the files and then deletes the
-original source folder.
+After confirmation, files are moved and renamed, and the original source folder is deleted.
 
 ## Example
 
 ### Source
 
-Downloaded files may look like:
-
 ```text
 ~/Downloads/
 └── [Example] Sousou no Frieren + SP/
-    ├── [Example] Sousou no Frieren - 01.mkv
-    ├── [Example] Sousou no Frieren - 02.mkv
+    ├── [Example] Sousou no Frieren - 01 [1080p].mkv
+    ├── [Example] Sousou no Frieren - 02 [1080p].mkv
     ├── [Example] Sousou no Frieren - 28 END.mkv
-    └── [Example] Sousou no Frieren OVA.mkv
+    └── Sousou no Frieren OVA.mkv
 ```
 
-The source may also contain arbitrary nested folders:
-
-```text
-~/Downloads/
-└── [Example] Sousou no Frieren + SP/
-    └── random-folder/
-        ├── [Example] Sousou no Frieren - 01 [1080p].mkv
-        ├── [Example] Sousou no Frieren - 02 [1080p].mkv
-        └── Sousou no Frieren OVA.mkv
-```
-
-The script searches recursively, so the additional folder structure does not
-matter.
+The script searches recursively, so files can also be inside additional subfolders.
 
 ### Result
-
-After confirmation and execution:
 
 ```text
 ~/Downloads/
@@ -184,52 +146,11 @@ After confirmation and execution:
         └── Sousou no Frieren - S01E28.mkv
 ```
 
-The original source directory is removed after processing.
+## Special Episodes
 
-## Episode Detection
+`OVA`, `Movie`, and `Special` files are placed in `Season 00`.
 
-### Standard season and episode
-
-```text
-Sousou no Frieren S01E05.mkv
-```
-
-becomes:
-
-```text
-Sousou no Frieren - S01E05.mkv
-```
-
-### Episode number only
-
-```text
-Sousou no Frieren - 05.mkv
-```
-
-becomes:
-
-```text
-Sousou no Frieren - S01E05.mkv
-```
-
-If no season is detected, `Season 01` is assumed.
-
-### `END`
-
-```text
-Sousou no Frieren - 28 END.mkv
-```
-
-is detected as episode 28:
-
-```text
-Sousou no Frieren - S01E28.mkv
-```
-
-`END`, `FINAL`, and similar release metadata are removed during filename
-cleaning without affecting the episode number.
-
-### OVA
+For example:
 
 ```text
 Sousou no Frieren OVA.mkv
@@ -241,32 +162,7 @@ becomes:
 Season 00/Sousou no Frieren - S00E01.mkv
 ```
 
-### Movie
-
-```text
-Sousou no Frieren Movie.mkv
-```
-
-is placed in:
-
-```text
-Season 00/
-```
-
-### Special
-
-```text
-Sousou no Frieren Special.mkv
-```
-
-is placed in:
-
-```text
-Season 00/
-```
-
-Multiple OVA, Movie, and Special files are automatically assigned different
-episode numbers:
+Multiple special files are automatically assigned unique episode numbers:
 
 ```text
 Season 00/
@@ -277,7 +173,22 @@ Season 00/
 
 ## Filename Cleaning
 
-The script removes everything inside square brackets, including the brackets.
+The script removes common release information such as:
+
+* Square-bracketed metadata
+* Video resolutions
+* `WEB-DL`
+* `WEBRip`
+* `BluRay`
+* `BDRip`
+* `HDTV`
+* `x264`
+* `x265`
+* `HEVC`
+* `AAC`
+* `FLAC`
+* `END`
+* `FINAL`
 
 For example:
 
@@ -285,86 +196,48 @@ For example:
 [Example] Sousou no Frieren - 28 [1080p].mkv
 ```
 
-is cleaned to:
+is normalized to:
 
 ```text
 Sousou no Frieren - 28
 ```
 
-It also removes common release information such as:
-
-```text
-WEB-DL
-WEBRip
-BluRay
-1080p
-x264
-HEVC
-AAC
-END
-FINAL
-```
-
-This allows filenames from different release sources to be normalized into a
-consistent Jellyfin naming format.
-
-## Safety
-
-The script does **not** immediately modify anything.
-
-It first shows the planned operations and asks for confirmation.
-
-The default answer is:
-
-```text
-[y/N]
-```
-
-Pressing Enter cancels the operation.
-
-### Destination conflicts
-
-A destination conflict such as:
+and renamed to:
 
 ```text
 Sousou no Frieren - S01E28.mkv
 ```
 
-already existing will cause that file to be skipped.
+## Safety
 
-If a destination conflict occurs, the source folder will **not** be deleted.
+The script is designed to avoid accidental data loss, but **review the preview before confirming**.
 
-This prevents the original source file from being accidentally destroyed when
-the intended destination already contains a file.
+### Destination conflicts
+
+If the destination file already exists, the file is skipped and the source folder is **not deleted**.
 
 ### Undetected episodes
 
-Files for which the episode number cannot be determined are skipped.
+Files whose episode number cannot be determined are skipped.
 
-However, if the operation proceeds and there are no destination conflicts, the
-**entire source folder is still deleted afterward**.
-
-This means skipped files are also deleted.
+However, if there are no destination conflicts, the source folder can still be deleted after execution. This means skipped files are also deleted.
 
 For example:
 
 ```text
-~/Downloads/
-└── [Example] Sousou no Frieren + SP/
-    ├── Sousou no Frieren - 01.mkv
-    ├── Sousou no Frieren - 02.mkv
-    └── unknown-file.mkv
+Source/
+├── Anime - 01.mkv
+├── Anime - 02.mkv
+└── unknown-file.mkv
 ```
 
-If the first two files are successfully processed but `unknown-file.mkv`
-cannot be identified, the `unknown-file.mkv` file will also be deleted when
-the source folder is removed.
+If the first two files are processed successfully but `unknown-file.mkv` cannot be identified, `unknown-file.mkv` will also be deleted when the source folder is removed.
 
-**Always review the output carefully before confirming.**
+**Always review the preview output carefully before confirming.**
 
 ## Jellyfin Structure
 
-The resulting structure follows the typical Jellyfin TV/anime organization:
+The resulting structure uses the standard Season/Episode format:
 
 ```text
 Sousou no Frieren/
@@ -376,7 +249,7 @@ Sousou no Frieren/
     └── Sousou no Frieren - S01E03.mkv
 ```
 
-The filename format is:
+Standard episodes use:
 
 ```text
 Anime Name - S01E01.mkv
@@ -387,19 +260,6 @@ Special content uses:
 ```text
 Anime Name - S00E01.mkv
 ```
-
-where `Season 00` is used for OVA, Movie, and Special content.
-
-````
-
-One other small correction I made: the README now uses your actual repository name consistently:
-
-```bash
-git clone git@github.com:Lvexander/jellyfin-organizer.git
-cd jellyfin-organizer
-````
-
-and the examples use **`Sousou no Frieren`** and **`[Example]`** rather than the real download-site name.
 
 ## License
 

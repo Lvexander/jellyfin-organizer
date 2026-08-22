@@ -74,12 +74,10 @@ METADATA_PATTERN = re.compile(
 
 def clean_spaces(text: str) -> str:
     """Normalize whitespace and separators."""
-
     text = text.replace("_", " ")
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s*-\s*", " - ", text)
-
-    return text.strip(" -._").strip()
+    return text.strip(" -. _").strip()
 
 
 def clean_filename(stem: str) -> str:
@@ -87,11 +85,9 @@ def clean_filename(stem: str) -> str:
     Remove release metadata from a filename.
 
     Example:
-
         [Example] Sousou no Frieren - 25 END [1080p]
 
     becomes:
-
         Sousou no Frieren - 25
     """
 
@@ -147,11 +143,9 @@ def detect_episode(
     Detect season and episode information.
 
     Returns:
-
         (season, episode, special_type)
 
     Examples:
-
         Sousou no Frieren - 25
             -> (None, 25, None)
 
@@ -267,7 +261,6 @@ def find_video_files(
     source_root: Path,
 ) -> list[Path]:
     """Recursively find supported video files."""
-
     return [
         path
         for path in source_root.rglob("*")
@@ -293,7 +286,6 @@ def get_existing_episode_numbers(
     numbers: set[int] = set()
 
     for file in season_dir.iterdir():
-
         if not file.is_file():
             continue
 
@@ -311,6 +303,74 @@ def get_existing_episode_numbers(
 
 
 # ============================================================
+# SEASON INPUT
+# ============================================================
+
+def ask_for_season() -> int | None:
+    """
+    Ask the user for an optional season number.
+
+    Empty input preserves the current automatic behavior.
+
+    Accepted formats:
+        2
+        02
+        Season 2
+        Season 02
+        S2
+        S02
+
+    Returns:
+        Season number, or None when automatic detection
+        should be used.
+    """
+
+    while True:
+        answer = input(
+            "Season number/name [Enter = auto-detect]: "
+        ).strip()
+
+        # ----------------------------------------------------
+        # Empty input = current automatic behavior.
+        # ----------------------------------------------------
+
+        if not answer:
+            return None
+
+        # ----------------------------------------------------
+        # Accept:
+        #
+        # 2
+        # 02
+        # Season 2
+        # Season 02
+        # S2
+        # S02
+        # ----------------------------------------------------
+
+        match = re.fullmatch(
+            r"(?:season\s*|s\s*)?(\d{1,2})",
+            answer,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            season = int(match.group(1))
+
+            if season == 0:
+                print(
+                    "Please enter a season number greater than 0."
+                )
+                continue
+
+            return season
+
+        print(
+            "Invalid season. Examples: 2, Season 2, or S2."
+        )
+
+
+# ============================================================
 # PROCESS ONE FILE
 # ============================================================
 
@@ -320,12 +380,12 @@ def process_file(
     anime_title: str,
     execute: bool,
     used_special_numbers: set[int],
+    season_override: int | None,
 ) -> tuple[bool, bool]:
     """
     Process one video file.
 
     Returns:
-
         (success, safe_to_delete_source)
 
     safe_to_delete_source is False when a destination
@@ -350,12 +410,25 @@ def process_file(
         cleaned_stem
     )
 
+    # --------------------------------------------------------
+    # Apply manual season override.
+    #
+    # Explicit S01E01-style season detection takes priority.
+    # If no season was detected, use the manually entered season.
+    # --------------------------------------------------------
+
+    if (
+        season_override is not None
+        and season is None
+        and special_type is None
+    ):
+        season = season_override
+
     # ========================================================
     # SPECIAL / OVA / MOVIE
     # ========================================================
 
     if special_type:
-
         season = 0
 
         season_dir = (
@@ -388,12 +461,10 @@ def process_file(
     # ========================================================
 
     else:
-
         if season is None:
             season = 1
 
         if episode is None:
-
             print()
             print(
                 "[SKIP] Could not determine episode:"
@@ -433,7 +504,6 @@ def process_file(
     # ========================================================
 
     if destination.exists():
-
         print()
         print(
             "[WARNING] Destination already exists."
@@ -461,19 +531,17 @@ def process_file(
     print(
         f"SOURCE : {file_path}"
     )
+
     print(
         f"CLEANED: {cleaned_stem}"
     )
 
     if special_type:
-
         print(
             f"TYPE   : "
             f"{special_type} -> Season 00"
         )
-
     else:
-
         print(
             f"TYPE   : "
             f"Episode -> Season {season:02d}"
@@ -488,7 +556,6 @@ def process_file(
     # ========================================================
 
     if execute:
-
         season_dir.mkdir(
             parents=True,
             exist_ok=True,
@@ -524,7 +591,6 @@ def delete_source_folder(
     )
 
     try:
-
         shutil.rmtree(
             source_root
         )
@@ -536,7 +602,6 @@ def delete_source_folder(
         return True
 
     except OSError as error:
-
         print(
             "ERROR: Could not delete source folder."
         )
@@ -570,17 +635,21 @@ def ask_for_confirmation() -> bool:
     )
 
     print()
+
     print(
         "WARNING:"
     )
+
     print(
         "The entire original source folder will be deleted"
     )
+
     print(
         "after processing, including any files that were skipped."
     )
 
     print()
+
     print(
         "This deletion cannot be undone."
     )
@@ -588,7 +657,6 @@ def ask_for_confirmation() -> bool:
     print()
 
     while True:
-
         answer = input(
             "Proceed with these changes? [y/N]: "
         ).strip().lower()
@@ -654,27 +722,23 @@ def validate_inputs(
     """Return an error message if inputs are invalid."""
 
     if not source_root.exists():
-
         return (
             "ERROR: Target folder does not exist:\n"
             f"       {source_root}"
         )
 
     if not source_root.is_dir():
-
         return (
             "ERROR: Target is not a directory:\n"
             f"       {source_root}"
         )
 
     if not anime_title:
-
         return (
             "ERROR: Anime title cannot be empty."
         )
 
     if source_root == destination_root:
-
         return (
             "ERROR: Source and destination "
             "are identical."
@@ -692,12 +756,12 @@ def process_files(
     destination_root: Path,
     anime_title: str,
     execute: bool,
+    season_override: int | None,
 ) -> tuple[int, int, bool]:
     """
     Process all files.
 
     Returns:
-
         processed
         skipped
         safe_to_delete_source
@@ -705,7 +769,6 @@ def process_files(
 
     processed = 0
     skipped = 0
-
     safe_to_delete_source = True
 
     # Used to give multiple OVA/Movie/Special files
@@ -714,13 +777,13 @@ def process_files(
     used_special_numbers: set[int] = set()
 
     for file_path in files:
-
         success, safe = process_file(
             file_path=file_path,
             destination_root=destination_root,
             anime_title=anime_title,
             execute=execute,
             used_special_numbers=used_special_numbers,
+            season_override=season_override,
         )
 
         if success:
@@ -746,6 +809,7 @@ def print_header(
     source_root: Path,
     anime_title: str,
     destination_root: Path,
+    season_override: int | None,
 ) -> None:
     """Print operation settings."""
 
@@ -762,16 +826,27 @@ def print_header(
         f"Anime title        : {anime_title}"
     )
 
+    if season_override is None:
+        print(
+            "Season             : Auto-detect"
+        )
+    else:
+        print(
+            f"Season             : Season {season_override:02d}"
+        )
+
     print(
         f"Destination folder : {destination_root}"
     )
 
     print()
+
     print(
         "MODE               : CONFIRM BEFORE EXECUTION"
     )
 
     print()
+
     print(
         "Nothing will be changed until you confirm."
     )
@@ -781,6 +856,7 @@ def print_header(
     )
 
     print()
+
     print("-" * 70)
 
 
@@ -828,6 +904,14 @@ def main() -> int:
         args.anime_title
     )
 
+    # --------------------------------------------------------
+    # Ask for optional season.
+    #
+    # Enter = preserve automatic behavior.
+    # --------------------------------------------------------
+
+    season_override = ask_for_season()
+
     destination_root = (
         source_root.parent
         / anime_title
@@ -844,7 +928,6 @@ def main() -> int:
     )
 
     if error_message:
-
         print(
             error_message
         )
@@ -859,6 +942,7 @@ def main() -> int:
         source_root,
         anime_title,
         destination_root,
+        season_override,
     )
 
     # --------------------------------------------------------
@@ -870,8 +954,8 @@ def main() -> int:
     )
 
     if not files:
-
         print()
+
         print(
             "No supported video files found."
         )
@@ -879,6 +963,7 @@ def main() -> int:
         return 0
 
     print()
+
     print(
         f"Found {len(files)} video file(s)."
     )
@@ -899,6 +984,7 @@ def main() -> int:
         destination_root=destination_root,
         anime_title=anime_title,
         execute=False,
+        season_override=season_override,
     )
 
     print_summary(
@@ -913,7 +999,6 @@ def main() -> int:
     # --------------------------------------------------------
 
     if not preview_safe:
-
         print()
         print("=" * 70)
         print("OPERATION CANCELLED")
@@ -934,8 +1019,8 @@ def main() -> int:
     # --------------------------------------------------------
 
     if preview_processed == 0:
-
         print()
+
         print(
             "Nothing can be processed."
         )
@@ -951,7 +1036,6 @@ def main() -> int:
     # --------------------------------------------------------
 
     if not ask_for_confirmation():
-
         print()
         print("=" * 70)
         print("CANCELLED")
@@ -981,6 +1065,7 @@ def main() -> int:
         destination_root=destination_root,
         anime_title=anime_title,
         execute=True,
+        season_override=season_override,
     )
 
     # --------------------------------------------------------
@@ -997,18 +1082,17 @@ def main() -> int:
     # --------------------------------------------------------
 
     print()
+
     print(
         "FILE PROCESSING COMPLETE."
     )
 
     if safe_to_delete_source:
-
         delete_source_folder(
             source_root
         )
 
     else:
-
         print()
         print("=" * 70)
         print(
