@@ -32,11 +32,11 @@ DEFAULT_FINISHED_FOLDER_PATH = "~/videos"
 # entered by the user. Multiple paths can be separated by commas.
 #
 # Example:
-# SEARCH_PATHS=~/storage,~/Downloads,~/downloads
+# SEARCH_PATHS=~/shared,~/jellyfin
 #
 # The script recursively searches these locations for folders
 # whose name exactly matches the folder name entered by the user.
-DEFAULT_SEARCH_PATHS = "~/storage,~/Downloads,~/downloads"
+DEFAULT_SEARCH_PATHS = "~/shared,~/jellyfin"
 
 ENV_FILENAME = ".env"
 
@@ -102,7 +102,7 @@ def load_env_file() -> dict[str, str]:
     Example:
 
         FINISHED_FOLDER_PATH=~/storage/videos/Anime
-        SEARCH_PATHS=~/storage,~/Downloads,~/downloads
+        SEARCH_PATHS=~/shared,~/jellyfin
     """
 
     env_path = (
@@ -188,7 +188,7 @@ def get_search_paths() -> list[Path]:
 
     Example:
 
-        SEARCH_PATHS=~/storage,~/Downloads,~/downloads
+        SEARCH_PATHS=~/shared,~/jellyfin
     """
 
     env = load_env_file()

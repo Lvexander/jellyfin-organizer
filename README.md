@@ -62,7 +62,7 @@ This defines the directories where the script searches for the folder you want t
 For example:
 
 ```env
-SEARCH_PATHS=~/storage,~/Downloads,~/downloads
+SEARCH_PATHS=~/shared,~/jellyfin
 ```
 
 If you enter:
