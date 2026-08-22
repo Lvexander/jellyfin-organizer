@@ -26,6 +26,10 @@ VIDEO_EXTENSIONS = {
     ".flv",
 }
 
+DEFAULT_FINISHED_FOLDER_PATH = "~/videos"
+ENV_FILENAME = ".env"
+ENV_FINISHED_FOLDER_KEY = "FINISHED_FOLDER_PATH"
+
 RESOLUTION_PATTERN = re.compile(
     r"\b(?:"
     r"240p|360p|480p|576p|720p|900p|1080p|"
@@ -69,14 +73,106 @@ METADATA_PATTERN = re.compile(
 
 
 # ============================================================
+# ENVIRONMENT CONFIGURATION
+# ============================================================
+
+def load_env_file() -> dict[str, str]:
+    """
+    Load simple KEY=VALUE pairs from the .env file located
+    next to this script.
+
+    Example:
+        FINISHED_FOLDER_PATH=~/videos
+    """
+
+    env_path = (
+        Path(__file__).resolve().parent
+        / ENV_FILENAME
+    )
+
+    if not env_path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+
+    try:
+        for line in env_path.read_text(
+            encoding="utf-8"
+        ).splitlines():
+
+            line = line.strip()
+
+            # Ignore empty lines and comments.
+            if not line or line.startswith("#"):
+                continue
+
+            if "=" not in line:
+                continue
+
+            key, value = line.split(
+                "=",
+                1,
+            )
+
+            key = key.strip()
+            value = value.strip()
+
+            # Remove optional surrounding quotes.
+            if (
+                len(value) >= 2
+                and value[0] == value[-1]
+                and value[0] in {"'", '"'}
+            ):
+                value = value[1:-1]
+
+            values[key] = value
+
+    except OSError as error:
+        print()
+        print(
+            f"[WARNING] Could not read .env file: {error}"
+        )
+
+    return values
+
+
+def get_finished_folder_path() -> Path:
+    """
+    Return the configured finished-folder destination.
+
+    Priority:
+        1. FINISHED_FOLDER_PATH from .env
+        2. ~/videos
+    """
+
+    env = load_env_file()
+
+    configured_path = env.get(
+        ENV_FINISHED_FOLDER_KEY,
+        DEFAULT_FINISHED_FOLDER_PATH,
+    ).strip()
+
+    if not configured_path:
+        configured_path = DEFAULT_FINISHED_FOLDER_PATH
+
+    return (
+        Path(configured_path)
+        .expanduser()
+        .resolve()
+    )
+
+
+# ============================================================
 # TEXT CLEANING
 # ============================================================
 
 def clean_spaces(text: str) -> str:
     """Normalize whitespace and separators."""
+
     text = text.replace("_", " ")
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s*-\s*", " - ", text)
+
     return text.strip(" -. _").strip()
 
 
@@ -144,28 +240,6 @@ def detect_episode(
 
     Returns:
         (season, episode, special_type)
-
-    Examples:
-        Sousou no Frieren - 25
-            -> (None, 25, None)
-
-        Sousou no Frieren - 25 END
-            -> (None, 25, None)
-
-        Sousou no Frieren S01E25
-            -> (1, 25, None)
-
-        Sousou no Frieren Episode 25
-            -> (None, 25, None)
-
-        Sousou no Frieren OVA
-            -> (0, None, "OVA")
-
-        Sousou no Frieren Movie
-            -> (0, None, "Movie")
-
-        Sousou no Frieren Special
-            -> (0, None, "Special")
     """
 
     stem = Path(filename).stem
@@ -261,6 +335,7 @@ def find_video_files(
     source_root: Path,
 ) -> list[Path]:
     """Recursively find supported video files."""
+
     return [
         path
         for path in source_root.rglob("*")
@@ -310,8 +385,6 @@ def ask_for_season() -> int | None:
     """
     Ask the user for an optional season number.
 
-    Empty input preserves the current automatic behavior.
-
     Accepted formats:
         2
         02
@@ -320,9 +393,7 @@ def ask_for_season() -> int | None:
         S2
         S02
 
-    Returns:
-        Season number, or None when automatic detection
-        should be used.
+    Empty input preserves automatic detection.
     """
 
     while True:
@@ -330,23 +401,8 @@ def ask_for_season() -> int | None:
             "Season number/name [Enter = auto-detect]: "
         ).strip()
 
-        # ----------------------------------------------------
-        # Empty input = current automatic behavior.
-        # ----------------------------------------------------
-
         if not answer:
             return None
-
-        # ----------------------------------------------------
-        # Accept:
-        #
-        # 2
-        # 02
-        # Season 2
-        # Season 02
-        # S2
-        # S02
-        # ----------------------------------------------------
 
         match = re.fullmatch(
             r"(?:season\s*|s\s*)?(\d{1,2})",
@@ -414,7 +470,6 @@ def process_file(
     # Apply manual season override.
     #
     # Explicit S01E01-style season detection takes priority.
-    # If no season was detected, use the manually entered season.
     # --------------------------------------------------------
 
     if (
@@ -518,9 +573,6 @@ def process_file(
             "  SKIPPING."
         )
 
-        # Do NOT delete the source folder if there
-        # is a destination conflict.
-
         return False, False
 
     # ========================================================
@@ -614,6 +666,163 @@ def delete_source_folder(
 
 
 # ============================================================
+# MOVE FINISHED FOLDER
+# ============================================================
+
+def ask_to_move_finished_folder() -> bool:
+    """
+    Ask whether the finished anime folder should be moved
+    to another location.
+
+    Default answer is No.
+    """
+
+    print()
+    print("=" * 70)
+    print("MOVE FINISHED FOLDER")
+    print("=" * 70)
+
+    print(
+        "The organized folder can optionally be moved"
+    )
+    print(
+        "to another location after processing."
+    )
+
+    print()
+
+    while True:
+        answer = input(
+            "Move finished folder to another location? [y/N]: "
+        ).strip().lower()
+
+        if not answer:
+            return False
+
+        if answer in {"y", "yes"}:
+            return True
+
+        if answer in {"n", "no"}:
+            return False
+
+        print(
+            "Please answer 'y' or 'n'."
+        )
+
+
+def move_finished_folder(
+    finished_folder: Path,
+    destination_root: Path,
+) -> bool:
+    """
+    Move the finished anime folder into destination_root.
+
+    Returns:
+        True when the move succeeds.
+        False when the move fails or a conflict exists.
+    """
+
+    if not finished_folder.exists():
+        print()
+        print(
+            "[ERROR] Finished folder does not exist:"
+        )
+        print(
+            f"        {finished_folder}"
+        )
+
+        return False
+
+    if not finished_folder.is_dir():
+        print()
+        print(
+            "[ERROR] Finished path is not a directory:"
+        )
+        print(
+            f"        {finished_folder}"
+        )
+
+        return False
+
+    destination_root.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    destination = (
+        destination_root
+        / finished_folder.name
+    )
+
+    # --------------------------------------------------------
+    # Prevent overwriting or merging with an existing folder.
+    # --------------------------------------------------------
+
+    if destination.exists():
+        print()
+        print("=" * 70)
+        print("FINISHED FOLDER CONFLICT")
+        print("=" * 70)
+
+        print(
+            "The destination folder already exists:"
+        )
+
+        print(
+            f"  SOURCE      : {finished_folder}"
+        )
+
+        print(
+            f"  DESTINATION : {destination}"
+        )
+
+        print()
+        print(
+            "The finished folder was NOT moved."
+        )
+
+        return False
+
+    print()
+    print("=" * 70)
+    print("MOVING FINISHED FOLDER")
+    print("=" * 70)
+
+    print(
+        f"SOURCE      : {finished_folder}"
+    )
+
+    print(
+        f"DESTINATION : {destination}"
+    )
+
+    try:
+        shutil.move(
+            str(finished_folder),
+            str(destination),
+        )
+
+        print()
+        print(
+            "Finished folder moved successfully."
+        )
+
+        return True
+
+    except OSError as error:
+        print()
+        print(
+            "[ERROR] Could not move finished folder."
+        )
+
+        print(
+            f"        {error}"
+        )
+
+        return False
+
+
+# ============================================================
 # CONFIRMATION
 # ============================================================
 
@@ -660,8 +869,6 @@ def ask_for_confirmation() -> bool:
         answer = input(
             "Proceed with these changes? [y/N]: "
         ).strip().lower()
-
-        # Empty input means NO.
 
         if not answer:
             return False
@@ -771,9 +978,6 @@ def process_files(
     skipped = 0
     safe_to_delete_source = True
 
-    # Used to give multiple OVA/Movie/Special files
-    # unique episode numbers during this run.
-
     used_special_numbers: set[int] = set()
 
     for file_path in files:
@@ -810,6 +1014,7 @@ def print_header(
     anime_title: str,
     destination_root: Path,
     season_override: int | None,
+    finished_folder_path: Path,
 ) -> None:
     """Print operation settings."""
 
@@ -837,6 +1042,10 @@ def print_header(
 
     print(
         f"Destination folder : {destination_root}"
+    )
+
+    print(
+        f"Finished folder    : {finished_folder_path}"
     )
 
     print()
@@ -906,11 +1115,15 @@ def main() -> int:
 
     # --------------------------------------------------------
     # Ask for optional season.
-    #
-    # Enter = preserve automatic behavior.
     # --------------------------------------------------------
 
     season_override = ask_for_season()
+
+    # --------------------------------------------------------
+    # Load finished-folder destination from .env.
+    # --------------------------------------------------------
+
+    finished_folder_path = get_finished_folder_path()
 
     destination_root = (
         source_root.parent
@@ -943,6 +1156,7 @@ def main() -> int:
         anime_title,
         destination_root,
         season_override,
+        finished_folder_path,
     )
 
     # --------------------------------------------------------
@@ -970,9 +1184,6 @@ def main() -> int:
 
     # --------------------------------------------------------
     # PREVIEW
-    #
-    # First pass only displays what will happen.
-    # No files are modified.
     # --------------------------------------------------------
 
     (
@@ -993,9 +1204,7 @@ def main() -> int:
     )
 
     # --------------------------------------------------------
-    # If there is a destination conflict, don't allow the
-    # user to proceed because deleting the source folder
-    # could destroy the conflicting source file.
+    # Destination conflict.
     # --------------------------------------------------------
 
     if not preview_safe:
@@ -1015,7 +1224,7 @@ def main() -> int:
         return 1
 
     # --------------------------------------------------------
-    # If nothing can be processed, don't ask for confirmation.
+    # Nothing to process.
     # --------------------------------------------------------
 
     if preview_processed == 0:
@@ -1107,6 +1316,18 @@ def main() -> int:
 
         print(
             f"Review: {source_root}"
+        )
+
+        return 1
+
+    # --------------------------------------------------------
+    # Optionally move finished folder.
+    # --------------------------------------------------------
+
+    if ask_to_move_finished_folder():
+        move_finished_folder(
+            finished_folder=destination_root,
+            destination_root=finished_folder_path,
         )
 
     # --------------------------------------------------------

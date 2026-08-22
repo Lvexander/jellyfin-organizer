@@ -31,7 +31,6 @@ htmlcov/
 
 # Local environment
 .env
-.env.*
 
 # Temporary files
 *.tmp
