@@ -32,6 +32,7 @@ Copy it to `.env`:
 
 ```bash
 cp .env.example .env
+```
 
 ### `FINISHED_FOLDER_PATH`
 
@@ -139,10 +140,9 @@ CONFIRMATION
 The files above are about to be moved and renamed.
 
 WARNING:
-The entire original source folder will be deleted
-after processing, including any files that were skipped.
+Only files that can be safely moved will be processed.
 
-This deletion cannot be undone.
+Existing destination files will never be overwritten.
 
 Proceed with these changes? [y/N]:
 ```
@@ -265,6 +265,16 @@ S01
 
 Press **Enter** to let the script automatically detect the season.
 
+Season `0` is used for specials/OVAs. Those files are placed in a folder named:
+
+```text
+Anime Title/
+└── Season/
+    └── Anime Title - S00E01.mkv
+```
+
+The folder name is `Season`, but the filename still uses Jellyfin-style `S00E##` numbering.
+
 ---
 
 # Season / Arc Title
@@ -357,6 +367,21 @@ Anime - 02.mkv
 Anime 03.mkv
 Anime.04.mkv
 ```
+
+### Specials / OVAs / Movies
+
+Filenames containing `OVA`, `Movie`, or `Special` are treated as season `0` specials.
+
+They are placed in the specials folder:
+
+```text
+Anime Title/
+└── Season/
+    ├── Anime Title - S00E01.mkv
+    └── Anime Title - S00E02.mkv
+```
+
+If existing special episode numbers are already present, the script chooses the next available `S00E##` number.
 
 ---
 
@@ -479,12 +504,13 @@ already exists, that file is skipped.
 The script will display:
 
 ```text
-[WARNING] Destination already exists:
-          /path/to/Season 01/Anime - S01E01.mkv
-          Skipping.
+[WARNING] Destination already exists.
+  SOURCE : /path/to/source-file.mkv
+  DEST   : /path/to/Season 01/Anime - S01E01.mkv
+  SKIPPING SOURCE FILE.
 ```
 
-This prevents accidental overwriting.
+This prevents accidental overwriting. Source files with destination conflicts are left untouched.
 
 ---
 
@@ -609,7 +635,7 @@ The script is designed to avoid accidental data loss:
 
 * Existing destination files are never overwritten.
 * Destination conflicts are detected.
-* Source folders are only removed after successful file processing.
+* Source folders are only removed when they are empty and safe to delete.
 * Existing anime folders are merged rather than replaced.
 * `--review` provides a confirmation step before modifying files.
 * Empty or invalid inputs are rejected.

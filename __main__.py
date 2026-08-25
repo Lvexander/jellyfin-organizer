@@ -488,7 +488,8 @@ def ask_for_season() -> int | None:
 
     Empty input preserves automatic detection.
 
-    Season 00 is used by Jellyfin for specials/OVAs.
+    Season 0 uses the folder name "Season" for specials/OVAs,
+    while filenames still use S00E##.
     """
 
     while True:
@@ -663,6 +664,21 @@ def find_video_files(
 
 
 # ============================================================
+# SEASON FOLDER NAMES
+# ============================================================
+
+def get_season_folder_name(
+    season: int,
+) -> str:
+    """Return the Jellyfin season folder name."""
+
+    if season == 0:
+        return "Season"
+
+    return f"Season {season:02d}"
+
+
+# ============================================================
 # EXISTING EPISODE NUMBERS
 # ============================================================
 
@@ -764,7 +780,7 @@ def process_file(
 
         season_dir = (
             destination_root
-            / "Season 00"
+            / get_season_folder_name(season)
         )
 
         existing_numbers = (
@@ -813,7 +829,7 @@ def process_file(
 
         season_dir = (
             destination_root
-            / f"Season {season:02d}"
+            / get_season_folder_name(season)
         )
 
     # ========================================================
@@ -878,11 +894,11 @@ def process_file(
 
         if special_type:
             print(
-                f"TYPE   : {special_type} -> Season 00"
+                f"TYPE   : {special_type} -> {get_season_folder_name(season)}"
             )
         else:
             print(
-                f"TYPE   : Episode -> Season {season:02d}"
+                f"TYPE   : Episode -> {get_season_folder_name(season)}"
             )
 
         if season_title:
@@ -937,11 +953,11 @@ def process_file(
 
     if special_type:
         print(
-            f"TYPE   : {special_type} -> Season 00"
+            f"TYPE   : {special_type} -> {get_season_folder_name(season)}"
         )
     else:
         print(
-            f"TYPE   : Episode -> Season {season:02d}"
+            f"TYPE   : Episode -> {get_season_folder_name(season)}"
         )
 
     if season_title:
