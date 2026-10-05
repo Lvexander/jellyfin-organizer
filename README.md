@@ -2,17 +2,19 @@
 
 A Python script for organizing downloaded anime, movies, and TV show video files into a Jellyfin-compatible folder structure.
 
+Show title, release year, and season number are resolved automatically from **MyAnimeList** and **TMDB**, so you only enter the folder and a MyAnimeList URL or ID.
+
 The script can:
 
-- Search for a source folder by name.
-- Ask for the anime title interactively.
-- Automatically detect season and episode numbers.
-- Optionally override the season number.
-- Optionally add a season/arc title.
+- Find the source folder by name or by full path.
+- Look up the anime on MyAnimeList and work out the season number from its prequel chain.
+- Match the anime on TMDB and build a Jellyfin folder name: `Title (Year) [tmdbid-123]`.
+- Automatically detect episode numbers.
+- Optionally override the season number or the TMDB match.
 - Clean release metadata from filenames.
 - Rename episodes to a consistent format.
 - Merge into an existing anime folder when appropriate.
-- Move the completed anime folder to the configured Jellyfin library.
+- Move the completed anime folder to the configured Jellyfin library (can be disabled).
 - Automatically execute changes by default.
 - Use `--review` to preview changes and require confirmation before execution.
 
@@ -21,6 +23,18 @@ The script can:
 ## Requirements
 
 - Python 3.10+
+- [uv](https://docs.astral.sh/uv/)
+- The `requests` library, installed with uv:
+
+```bash
+uv add requests
+```
+
+If the repository has no `pyproject.toml` yet, run `uv init` first. `uv sync` installs the dependencies on a fresh clone.
+
+- A MyAnimeList API client ID
+- A TMDB API key
+- Internet access (the script calls both APIs)
 
 ---
 
@@ -33,6 +47,16 @@ Copy it to `.env`:
 ```bash
 cp .env.example .env
 ```
+
+### `MAL_CLIENT_ID`
+
+Your MyAnimeList API client ID. Create one at <https://myanimelist.net/apiconfig>.
+
+### `TMDB_API_KEY`
+
+Your TMDB API key. Get one at <https://www.themoviedb.org/settings/api>.
+
+Both keys are required. The script exits with an error if either is missing.
 
 ### `FINISHED_FOLDER_PATH`
 
@@ -48,12 +72,12 @@ The script will create:
 
 ```text
 ~/storage/videos/Anime/
-└── Anime Title/
+└── Anime Title (2023) [tmdbid-123456]/
     ├── Season 01/
-    │   ├── Anime Title - S01E01.mkv
-    │   └── Anime Title - S01E02.mkv
+    │   ├── Anime Title (2023) - S01E01.mkv
+    │   └── Anime Title (2023) - S01E02.mkv
     └── Season 02/
-        └── Anime Title - S02E01.mkv
+        └── Anime Title (2023) - S02E01.mkv
 ```
 
 ### `SEARCH_PATHS`
@@ -69,7 +93,7 @@ SEARCH_PATHS=~/shared,~/jellyfin
 If you enter:
 
 ```text
-Folder name: Sousou no Frieren
+Folder name or full path: Sousou no Frieren
 ```
 
 the script searches those locations recursively for an **exact folder name**:
@@ -82,35 +106,65 @@ the script searches those locations recursively for an **exact folder name**:
 
 If multiple matching folders are found, the script asks you to select which one to process.
 
+### Example `.env`
+
+```env
+FINISHED_FOLDER_PATH=~/storage/videos/Anime
+SEARCH_PATHS=~/shared,~/jellyfin
+MAL_CLIENT_ID=your_mal_client_id
+TMDB_API_KEY=your_tmdb_api_key
+```
+
 ---
 
 ## Usage
 
 ### Normal mode
 
-Run:
+From the repository directory, run:
 
 ```bash
-python3 ~/storage/code/jellyfin-organizer
+uv run main.py
+```
+
+To run it from anywhere, use `--project` (or put it in a shell alias):
+
+```bash
+uv run --project ~/storage/code/jellyfin-organizer ~/storage/code/jellyfin-organizer/main.py
 ```
 
 The script will interactively ask:
 
 ```text
-Folder name: Sousou no Frieren
+Folder name or full path: Sousou no Frieren
 
 Searching for exact folder name: Sousou no Frieren
 
 Found: /home/levi/storage/downloads/Sousou no Frieren
 
-Anime title: Sousou no Frieren
+MyAnimeList URL or ID: https://myanimelist.net/anime/52991/Sousou_no_Frieren
 
-Season number [Enter = auto-detect]:
-
-Season/arc title [Enter = none]:
+Fetching metadata...
 ```
 
 The operation is then executed automatically.
+
+### Command-line options
+
+| Option | Description |
+| --- | --- |
+| `--review` | Show a preview and ask for confirmation before changing anything. |
+| `--season N` | Use season `N` instead of the season detected from MyAnimeList. |
+| `--tmdb-id ID` | Use this TMDB TV show ID instead of searching TMDB. |
+| `--no-move` | Do not move the result to `FINISHED_FOLDER_PATH`. |
+
+Examples:
+
+```bash
+uv run main.py --review
+uv run main.py --review --tmdb-id 209867
+uv run main.py --season 2 --no-move
+```
 
 ---
 
@@ -119,19 +173,34 @@ The operation is then executed automatically.
 Use `--review` when you want to see the planned changes before anything is modified:
 
 ```bash
-python3 ~/storage/code/jellyfin-organizer --review
+uv run main.py --review
 ```
 
 In review mode, the script:
 
 1. Finds the source folder.
-2. Detects the video files.
-3. Shows the planned rename/move operations.
-4. Shows the destination.
-5. Asks for confirmation.
-6. Only executes the operation if you answer `y`.
+2. Looks up MyAnimeList and TMDB.
+3. Shows the matched metadata (MAL entry, TMDB match, season).
+4. Detects the video files.
+5. Shows the planned rename/move operations.
+6. Shows the destination.
+7. Asks for confirmation.
+8. Only executes the operation if you answer `y`.
 
-Example:
+The metadata block looks like this:
+
+```text
+======================================================================
+METADATA
+======================================================================
+MAL    : Grand Blue Season 3 (id 62542, tv)
+TMDB   : Grand Blue -> Grand Blue (2018) [tmdbid-78203]
+SEASON : 3 (MAL prequel chain)
+
+If the TMDB match is wrong, answer N and rerun with --tmdb-id.
+```
+
+Confirmation prompt:
 
 ```text
 ======================================================================
@@ -153,12 +222,14 @@ Press **Enter** or enter `n` to cancel.
 
 # Interactive Inputs
 
-## Folder Name
+## Folder Name or Full Path
 
-The script asks for the folder name instead of requiring the complete path:
+You can enter either the folder name or its path.
+
+**Folder name**: the script searches `SEARCH_PATHS` for an exact match:
 
 ```text
-Folder name: Frieren
+Folder name or full path: Frieren
 ```
 
 The folder must match exactly.
@@ -185,123 +256,86 @@ Sousou no Frieren
 
 If multiple exact matches are found, you can select the correct folder.
 
----
-
-## Anime Title
-
-Enter the title you want Jellyfin to use:
+**Full or relative path**: used directly, no search. Any input containing `/` or starting with `~` or `.` is treated as a path:
 
 ```text
-Anime title: Sousou no Frieren
+Folder name or full path: ~/storage/downloads/Sousou no Frieren
 ```
 
-This becomes both the destination folder name and the base filename.
-
-Example:
-
-```text
-Sousou no Frieren/
-└── Season 01/
-    └── Sousou no Frieren - S01E01.mkv
-```
-
-The title can be different from the original folder name.
-
-For example:
-
-```text
-Folder name: Ichijouma Mankitsugurashi!
-
-Anime title: Ichijyoma Mankitsu Gurashi!
-```
-
-The existing folder can therefore be renamed as part of the organization process.
+Surrounding quotes (for example, pasted from `ls` output) are ignored.
 
 ---
 
-# Season Number
+## MyAnimeList URL or ID
 
-The script asks:
-
-```text
-Season number [Enter = auto-detect]:
-```
-
-You can enter:
+Enter either a MyAnimeList URL or the numeric ID:
 
 ```text
-1
+MyAnimeList URL or ID: https://myanimelist.net/anime/62542/Grand_Blue_Season_3
 ```
 
 or:
 
 ```text
-01
+MyAnimeList URL or ID: 62542
 ```
 
-or:
+Use the MAL entry of the **season you are organizing**, not the first season. The script finds the first season itself.
+
+---
+
+# How Title and Season Are Resolved
+
+## Season number
+
+The script follows the MyAnimeList **prequel** relations back to the first season.
+
+- The season number is the number of `tv` and `ona` entries in that chain, including the entry you entered.
+- Movies, OVAs, and specials in the chain are passed through but not counted.
+- If the entered entry is not `tv`/`ona` (for example a movie or OVA), the season is `0`.
+
+For example, `Grand Blue Season 3` → `Grand Blue Season 2` → `Grand Blue` gives season `3`.
+
+The season from MyAnimeList **overrides** any season found in the filename (for example, files named `S01E05` in a Season 3 folder are renamed to `S03E05`). Files detected as specials, and files that explicitly say `S00`, stay in Season 0.
+
+## Title and year
+
+The first season's titles (English, then default, then Japanese) are searched on TMDB. If there are several results, the first of the top five whose first air date year matches the MyAnimeList start year is used. Otherwise the top result is used.
+
+The result is turned into:
+
+| Item | Format | Example |
+| --- | --- | --- |
+| Folder | `Title (Year) [tmdbid-ID]` | `Grand Blue (2018) [tmdbid-78203]` |
+| Season folder | `Season NN` | `Season 03` |
+| File | `Title (Year) - SxxExx.ext` | `Grand Blue (2018) - S03E01.mkv` |
+
+Colons in titles are replaced with ` - ` and characters that are invalid in filenames are removed, while hyphens are kept:
 
 ```text
-Season 1
+Kaguya-sama: Love Is War  →  Kaguya-sama - Love Is War
 ```
 
-or:
+## Fixing a wrong result
 
-```text
-Season 01
-```
+- **Wrong TMDB match**: find the correct show on TMDB and rerun with `--tmdb-id <id>`.
+- **Wrong season**: rerun with `--season N`. MyAnimeList and TMDB can number seasons differently (for example split cours or long-running shows).
 
-or:
+Use `--review` so you can check the match before anything is moved.
 
-```text
-S1
-```
+---
 
-or:
-
-```text
-S01
-```
-
-Press **Enter** to let the script automatically detect the season.
+# Season 0 (Specials)
 
 Season `0` is used for specials/OVAs. Those files are placed in a folder named:
 
 ```text
-Anime Title/
+Anime Title (Year) [tmdbid-123456]/
 └── Season/
-    └── Anime Title - S00E01.mkv
+    └── Anime Title (Year) - S00E01.mkv
 ```
 
 The folder name is `Season`, but the filename still uses Jellyfin-style `S00E##` numbering.
-
----
-
-# Season / Arc Title
-
-The script also asks:
-
-```text
-Season/arc title [Enter = none]:
-```
-
-For example:
-
-```text
-Season/arc title [Enter = none]: Yuukaku-hen
-```
-
-The resulting filename becomes:
-
-```text
-Demon Slayer - S02E01 (Yuukaku-hen).mkv
-```
-
-If no title is entered:
-
-```text
-Demon Slayer - S02E01.mkv
-```
 
 ---
 
@@ -318,8 +352,10 @@ Anime S01E01.mkv
 becomes:
 
 ```text
-Anime - S01E01.mkv
+Anime (Year) - S01E01.mkv
 ```
+
+An explicit `SxxExx` tag always wins over keywords such as `Movie` or `Special` appearing in the title. The season number itself is then replaced by the one resolved from MyAnimeList (see above).
 
 ### E01
 
@@ -330,7 +366,7 @@ Anime E01.mkv
 becomes:
 
 ```text
-Anime - S01E01.mkv
+Anime (Year) - S01E01.mkv
 ```
 
 ### EP01
@@ -342,7 +378,7 @@ Anime EP01.mkv
 becomes:
 
 ```text
-Anime - S01E01.mkv
+Anime (Year) - S01E01.mkv
 ```
 
 ### Episode 01
@@ -354,7 +390,7 @@ Anime Episode 01.mkv
 becomes:
 
 ```text
-Anime - S01E01.mkv
+Anime (Year) - S01E01.mkv
 ```
 
 ### Number-based filenames
@@ -370,15 +406,15 @@ Anime.04.mkv
 
 ### Specials / OVAs / Movies
 
-Filenames containing `OVA`, `Movie`, or `Special` are treated as season `0` specials.
+Filenames containing `OVA`, `Movie`, or `Special` (and no `SxxExx` tag) are treated as season `0` specials.
 
 They are placed in the specials folder:
 
 ```text
-Anime Title/
+Anime Title (Year) [tmdbid-123456]/
 └── Season/
-    ├── Anime Title - S00E01.mkv
-    └── Anime Title - S00E02.mkv
+    ├── Anime Title (Year) - S00E01.mkv
+    └── Anime Title (Year) - S00E02.mkv
 ```
 
 If existing special episode numbers are already present, the script chooses the next available `S00E##` number.
@@ -440,17 +476,17 @@ The script supports adding new seasons to an anime that already exists in the Je
 For example:
 
 ```text
-~/storage/videos/Anime/Iya na Kao sare nagara Opantsu Misete Moraitai/
+~/storage/videos/Anime/Grand Blue (2018) [tmdbid-78203]/
 └── Season 01/
     └── ...
 ```
 
-You can process another folder containing Season 02.
+You can process another folder containing Season 02, entering the MyAnimeList ID of Season 2.
 
 The script will merge the new season into the existing anime folder:
 
 ```text
-~/storage/videos/Anime/Iya na Kao sare nagara Opantsu Misete Moraitai/
+~/storage/videos/Anime/Grand Blue (2018) [tmdbid-78203]/
 ├── Season 01/
 │   └── ...
 └── Season 02/
@@ -458,6 +494,8 @@ The script will merge the new season into the existing anime folder:
 ```
 
 The existing `Season 01` is preserved.
+
+Merging works because every season of the same show resolves to the **same TMDB title, year, and ID**, and therefore the same folder name. Existing library folders that were named without `[tmdbid-...]` will not be merged automatically; they are treated as different folders.
 
 ---
 
@@ -468,24 +506,20 @@ The script can also rename an anime folder that is already inside `FINISHED_FOLD
 For example, if the existing folder is:
 
 ```text
-~/storage/videos/Anime/Ichijouma Mankitsugurashi!
+~/storage/videos/Anime/Grand Blue Dreaming
 ```
 
-and you enter:
+enter its path (or name) and the MyAnimeList ID of the season it contains. The script moves the episodes into:
 
 ```text
-Anime title: Ichijyoma Mankitsu Gurashi!
-```
-
-the script moves the episodes into:
-
-```text
-~/storage/videos/Anime/Ichijyoma Mankitsu Gurashi!/
+~/storage/videos/Anime/Grand Blue (2018) [tmdbid-78203]/
 ```
 
 The old folder is removed only after the files have been successfully processed.
 
 If the destination already exists, the script merges the contents instead of replacing the existing folder.
+
+If the folder holds several seasons, run the script once per season with the matching MyAnimeList ID.
 
 ---
 
@@ -496,7 +530,7 @@ The script does not overwrite existing video files.
 For example, if:
 
 ```text
-Season 01/Anime - S01E01.mkv
+Season 01/Anime (Year) - S01E01.mkv
 ```
 
 already exists, that file is skipped.
@@ -506,7 +540,7 @@ The script will display:
 ```text
 [WARNING] Destination already exists.
   SOURCE : /path/to/source-file.mkv
-  DEST   : /path/to/Season 01/Anime - S01E01.mkv
+  DEST   : /path/to/Season 01/Anime (Year) - S01E01.mkv
   SKIPPING SOURCE FILE.
 ```
 
@@ -532,6 +566,8 @@ The following extensions are supported:
 
 The search is recursive, so files inside subdirectories are also detected.
 
+Subtitle and other non-video files are not processed.
+
 ---
 
 # Workflow
@@ -542,90 +578,92 @@ The overall workflow is:
 Start
   │
   ▼
-Enter folder name
+Enter folder name or path
+  │
+  ├── Path ──────► Use directly
+  │
+  └── Name ──────► Search SEARCH_PATHS
+                      │
+                      ├── No match ──► Error
+                      │
+                      ├── One match ─► Continue
+                      │
+                      └── Multiple matches
+                              │
+                              ▼
+                           Select folder
   │
   ▼
-Search SEARCH_PATHS
+Enter MyAnimeList URL or ID
   │
-  ├── No match ──► Error
+  ▼
+Fetch MAL prequel chain ──► season number
   │
-  ├── One match ─► Continue
+  ▼
+Search TMDB ──► title, year, ID
   │
-  └── Multiple matches
-          │
-          ▼
-       Select folder
-          │
-          ▼
-Enter anime title
-          │
-          ▼
-Enter season
-          │
-          ▼
-Enter season/arc title
-          │
-          ▼
+  ▼
 Find video files
-          │
-          ▼
-Detect season/episode
-          │
-          ▼
+  │
+  ▼
+Detect episode numbers
+  │
+  ▼
 Generate destination filenames
+  │
+  ├── Normal mode
+  │       │
+  │       ▼
+  │    Execute
+  │
+  └── --review
           │
-          ├── Normal mode
-          │       │
-          │       ▼
-          │    Execute
+          ▼
+      Show metadata + preview
           │
-          └── --review
-                  │
-                  ▼
-              Show preview
-                  │
-                  ▼
-              Confirmation
-                  │
-             ┌────┴────┐
-             │         │
-            Yes        No
-             │         │
-             ▼         ▼
-          Execute    Cancel
-             │
-             ▼
-      Merge destination
-             │
-             ▼
-      Remove old source
-             │
-             ▼
-            Done
+          ▼
+      Confirmation
+          │
+     ┌────┴────┐
+     │         │
+    Yes        No
+     │         │
+     ▼         ▼
+  Execute    Cancel
+     │
+     ▼
+Remove empty source
+     │
+     ▼
+Move/merge into FINISHED_FOLDER_PATH
+(skipped with --no-move)
+     │
+     ▼
+    Done
 ```
 
 ---
 
 # Recommended Usage
 
-For normal downloads:
+Anime titles are matched automatically, so a wrong TMDB match is possible. **`--review` is recommended** so you can check the metadata before anything is moved:
 
 ```bash
-python3 ~/storage/code/jellyfin-organizer
+uv run main.py --review
 ```
 
-For potentially risky operations, such as reorganizing an existing Jellyfin library:
+Without `--review`, the changes run immediately and you do not get a chance to check the match.
 
-```bash
-python3 ~/storage/code/jellyfin-organizer --review
-```
+Using `--review` is especially recommended when:
 
-Using `--review` is recommended when:
-
+* Organizing a title for the first time.
 * Renaming an existing anime.
 * Moving files between existing seasons.
 * Processing a folder that is already inside the Jellyfin library.
+* The show has split cours, many seasons, or unusual season numbering.
 * You are unsure how the episode detector will interpret the filenames.
+
+Use `--no-move` if you only want to rename and keep the result next to the source folder.
 
 ---
 
@@ -638,8 +676,9 @@ The script is designed to avoid accidental data loss:
 * Source folders are only removed when they are empty and safe to delete.
 * Existing anime folders are merged rather than replaced.
 * `--review` provides a confirmation step before modifying files.
-* Empty or invalid inputs are rejected.
+* Invalid inputs are rejected (empty folder, invalid MyAnimeList URL/ID).
 * Unsupported files are not processed.
+* API errors are reported without printing your API keys.
 
 Despite these safeguards, **keep backups of important media before performing large-scale reorganizations**.
 
