@@ -24,17 +24,22 @@ The script can:
 
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/)
-- The `requests` library, installed with uv:
+- A MyAnimeList API client ID and a TMDB API key (see [Configuration](#configuration))
+- Internet access (the script calls both APIs)
+
+Dependencies (`requests`) are declared in `pyproject.toml` and pinned in `uv.lock`.
+
+### Install
+
+After cloning, run this in the repository directory:
 
 ```bash
-uv add requests
+uv sync
 ```
 
-If the repository has no `pyproject.toml` yet, run `uv init` first. `uv sync` installs the dependencies on a fresh clone.
+`uv sync` creates `.venv` and installs the dependencies in one step, so a separate `uv venv` is not needed. (`uv venv` on its own only creates an empty virtual environment.)
 
-- A MyAnimeList API client ID
-- A TMDB API key
-- Internet access (the script calls both APIs)
+`uv run` also syncs automatically, so you can skip straight to [Usage](#usage).
 
 ---
 
