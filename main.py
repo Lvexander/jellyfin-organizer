@@ -672,31 +672,31 @@ def parse_mal_id(text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def ask_for_title_or_mal_id() -> tuple[int | None, str | None]:
-    """Ask for a MAL URL/ID, or a manual title when left blank."""
+def ask_for_mal_id() -> int:
+    """Ask for a MyAnimeList URL or ID."""
 
     while True:
 
-        answer = input(
-            "MyAnimeList URL or ID (Enter to type a title): "
-        ).strip()
-
-        if not answer:
-            while True:
-                title = input("Anime title: ").strip()
-                if clean_display_title(title):
-                    return None, title
-                print("Title cannot be empty.")
+        answer = input("MyAnimeList URL or ID: ").strip()
 
         mal_id = parse_mal_id(answer)
 
         if mal_id:
-            return mal_id, None
+            return mal_id
 
         print(
             "Invalid input. Examples: 62542 or "
             "https://myanimelist.net/anime/62542/Grand_Blue_Season_3"
         )
+
+
+def ask_for_manual_title() -> str | None:
+    """Ask for an optional display title override."""
+
+    answer = input(
+        "Manual title (Enter to use the title from TMDB): "
+    ).strip()
+    return clean_display_title(answer) if answer else None
 
 
 # ============================================================
@@ -2382,50 +2382,42 @@ def main() -> int:
     # Resolve the title and season metadata.
     # --------------------------------------------------------
 
-    mal_id, manual_title = ask_for_title_or_mal_id()
+    mal_id = ask_for_mal_id()
+    manual_title = ask_for_manual_title()
 
+    mal_client_id = get_api_key(ENV_MAL_CLIENT_ID_KEY)
+    tmdb_api_key = get_api_key(ENV_TMDB_API_KEY_KEY)
+
+    print()
+    print("Fetching metadata...")
+
+    series = resolve_mal_series(mal_id, mal_client_id)
+    kind = "movie" if series.is_movie else "tv"
+
+    if args.tmdb_id:
+        tmdb = fetch_tmdb(kind, args.tmdb_id, tmdb_api_key)
+    else:
+        tmdb = search_tmdb(
+            kind,
+            series.target if series.is_movie else series.first,
+            tmdb_api_key,
+        )
+
+    title, title_source = pick_title(
+        tmdb_name(tmdb),
+        fetch_tmdb_alternative_titles(tmdb["id"], tmdb_api_key, kind),
+    )
     if manual_title:
         title = manual_title
         title_source = "manual"
-        anime_title = clean_display_title(title)
-        folder_name = anime_title
-        series = None
-        tmdb = None
-        kind = "tv"
-    else:
-        mal_client_id = get_api_key(ENV_MAL_CLIENT_ID_KEY)
-        tmdb_api_key = get_api_key(ENV_TMDB_API_KEY_KEY)
+    folder_name, anime_title = build_names(tmdb, title)
 
-        print()
-        print("Fetching metadata...")
-
-        series = resolve_mal_series(mal_id, mal_client_id)
-        kind = "movie" if series.is_movie else "tv"
-
-        if args.tmdb_id:
-            tmdb = fetch_tmdb(kind, args.tmdb_id, tmdb_api_key)
-        else:
-            tmdb = search_tmdb(
-                kind,
-                series.target if series.is_movie else series.first,
-                tmdb_api_key,
-            )
-
-        title, title_source = pick_title(
-            tmdb_name(tmdb),
-            fetch_tmdb_alternative_titles(tmdb["id"], tmdb_api_key, kind),
-        )
-        folder_name, anime_title = build_names(tmdb, title)
-
-    if series and series.is_movie:
+    if series.is_movie:
         season_override = None
         season_source = "n/a (movie)"
     elif args.season is not None:
         season_override = args.season
         season_source = "--season"
-    elif series is None:
-        season_override = 1
-        season_source = "default (manual title)"
     else:
         season_override = series.season
         season_source = "MAL prequel chain"
@@ -2498,21 +2490,18 @@ def main() -> int:
     print("METADATA")
     print("=" * 70)
 
-    if series:
-        print(
-            f"MAL    : {series.target['title']} "
-            f"(id {mal_id}, {series.target.get('media_type', '?')})"
-        )
-        print(f"TMDB   : {tmdb_name(tmdb)} (id {tmdb['id']}, {kind})")
-    else:
-        print("METADATA: Manual title; MAL/TMDB lookup skipped")
+    print(
+        f"MAL    : {series.target['title']} "
+        f"(id {mal_id}, {series.target.get('media_type', '?')})"
+    )
+    print(f"TMDB   : {tmdb_name(tmdb)} (id {tmdb['id']}, {kind})")
     print(
         f"TITLE  : {title} [{title_source}]"
     )
     print(
         f"FOLDER : {folder_name}"
     )
-    if series and series.is_movie:
+    if series.is_movie:
         print(
             "TYPE   : Movie (standalone, no season folder)"
         )
@@ -2521,7 +2510,7 @@ def main() -> int:
             f"SEASON : {season_override} ({season_source})"
         )
 
-    if args.review and series:
+    if args.review:
         print()
         print(
             "If the TMDB match is wrong, answer N and "
@@ -2555,7 +2544,7 @@ def main() -> int:
     def run(execute: bool) -> tuple[int, int, bool]:
         """Process the files as a movie or as series episodes."""
 
-        if series and series.is_movie:
+        if series.is_movie:
             return process_movie_files(
                 files=files,
                 destination_root=destination_root,

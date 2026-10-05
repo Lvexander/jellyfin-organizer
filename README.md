@@ -4,7 +4,7 @@ A Python script for organizing downloaded anime, movies, and TV show video files
 
 Show title and season number are resolved automatically from **MyAnimeList** and **TMDB**, so you only enter the folder and a MyAnimeList URL or ID. The release year helps match the show, but is left out of folder and file names.
 
-If you prefer to enter the title yourself, leave the MyAnimeList prompt blank. Manual titles use season 1 by default; use `--season N` to choose another season. These folders do not include a TMDB ID.
+After entering the MyAnimeList URL or ID, you can optionally enter a manual title. The script still resolves the season and TMDB ID as usual, and uses your title for the folder and filenames. Press Enter to keep the title selected from TMDB.
 
 The script can:
 
@@ -149,7 +149,9 @@ Searching for exact folder name: Sousou no Frieren
 
 Found: /home/levi/storage/downloads/Sousou no Frieren
 
-MyAnimeList URL or ID (Enter to type a title): https://myanimelist.net/anime/52991/Sousou_no_Frieren
+MyAnimeList URL or ID: https://myanimelist.net/anime/52991/Sousou_no_Frieren
+
+Manual title (Enter to use the title from TMDB):
 
 Fetching metadata...
 ```
@@ -173,7 +175,7 @@ uv run main.py --review --tmdb-id 209867
 uv run main.py --season 2 --no-move
 ```
 
-To enter a title manually, run `uv run main.py` and press Enter at the MyAnimeList prompt, then type the title. Use `--season N` to set its season number.
+To use your own title, enter it at the optional manual title prompt after the MyAnimeList URL or ID. Press Enter to skip it and use the automatically selected TMDB title. The season is still resolved from MyAnimeList, and the folder still includes the TMDB ID.
 
 ---
 
