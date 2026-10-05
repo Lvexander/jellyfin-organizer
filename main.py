@@ -2392,7 +2392,6 @@ def main() -> int:
         series = None
         tmdb = None
         kind = "tv"
-        if not anime_title:
     else:
         mal_client_id = get_api_key(ENV_MAL_CLIENT_ID_KEY)
         tmdb_api_key = get_api_key(ENV_TMDB_API_KEY_KEY)
