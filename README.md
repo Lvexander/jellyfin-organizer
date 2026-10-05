@@ -199,7 +199,9 @@ The metadata block looks like this:
 METADATA
 ======================================================================
 MAL    : Grand Blue Season 3 (id 62542, tv)
-TMDB   : Grand Blue -> Grand Blue (2018) [tmdbid-78203]
+TMDB   : Grand Blue (id 78203)
+TITLE  : Grand Blue [US Short Title]
+FOLDER : Grand Blue (2018) [tmdbid-78203]
 SEASON : 3 (MAL prequel chain)
 
 If the TMDB match is wrong, answer N and rerun with --tmdb-id.
@@ -306,6 +308,14 @@ The season from MyAnimeList **overrides** any season found in the filename (for 
 ## Title and year
 
 The first season's titles (English, then default, then Japanese) are searched on TMDB. If there are several results, the first of the top five whose first air date year matches the MyAnimeList start year is used. Otherwise the top result is used.
+
+The name used in the folder and filenames is then chosen from that show's TMDB alternative titles, in this order:
+
+1. United States **Short Title**
+2. Japan **romaji** title
+3. The regular TMDB name, if neither of the above exists
+
+For example, a show with the US short title `Hell Mode` and the Japan romaji title `Hell Mode: Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` is named `Hell Mode`. A show with only the romaji title is named `Hell Mode - Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` (the colon is replaced, see below). The year and TMDB ID always come from the matched show.
 
 The result is turned into:
 

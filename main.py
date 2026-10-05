@@ -296,10 +296,29 @@ def api_get(
             else type(error).__name__
         )
 
-        # Do not print the exception itself:
-        # it can contain the API key in the URL.
+        # Show only the underlying cause (DNS failure, timeout,
+        # TLS error...). The full message contains the request
+        # URL and can include the API key, so it is redacted.
+        reason = ""
+
+        if not status:
+
+            message = re.sub(
+                r"api_key=[^&\s'\")]+",
+                "api_key=***",
+                str(error),
+            )
+
+            cause = re.search(
+                r"Caused by (.*)\)\s*$",
+                message,
+            )
+
+            if cause:
+                reason = f"\n        {cause.group(1)[:200]}"
+
         raise SystemExit(
-            f"[ERROR] Request failed ({detail}): {url}"
+            f"[ERROR] Request failed ({detail}): {url}{reason}"
         ) from None
 
 
@@ -454,6 +473,73 @@ def fetch_tmdb_tv(
     )
 
 
+def fetch_tmdb_alternative_titles(
+    tmdb_id: int,
+    api_key: str,
+) -> list[dict]:
+    """
+    Fetch TMDB alternative titles.
+
+    Each item looks like:
+
+        {"iso_3166_1": "US", "title": "Hell Mode", "type": "Short Title"}
+    """
+
+    data = api_get(
+        f"{TMDB_API_URL}/tv/{tmdb_id}/alternative_titles",
+        params={"api_key": api_key},
+    )
+
+    return data.get("results", [])
+
+
+def pick_title(
+    tmdb_name: str,
+    alternative_titles: list[dict],
+) -> tuple[str, str]:
+    """
+    Choose the title used for the folder and filenames.
+
+    Priority:
+
+        1. United States "Short Title"
+        2. Japan "romaji" title
+        3. The regular TMDB name
+
+    Returns (title, source label).
+    """
+
+    def find(country: str, title_type: str) -> str | None:
+        for item in alternative_titles:
+
+            item_type = (
+                (item.get("type") or "")
+                .strip()
+                .lower()
+            )
+
+            if (
+                item.get("iso_3166_1") == country
+                and item_type == title_type
+                and item.get("title")
+            ):
+                return item["title"]
+
+        return None
+
+    short_title = find("US", "short title")
+
+    if short_title:
+        return short_title, "US Short Title"
+
+    romaji = find("JP", "romaji")
+
+    if romaji:
+        return romaji, "JP romaji"
+
+    return tmdb_name, "TMDB name"
+
+
 def sanitize_title(title: str) -> str:
     """
     Make a TMDB title filesystem-safe.
@@ -468,15 +554,21 @@ def sanitize_title(title: str) -> str:
     return title.strip(" .")
 
 
-def build_names(tmdb: dict) -> tuple[str, str]:
+def build_names(
+    tmdb: dict,
+    title: str,
+) -> tuple[str, str]:
     """
     Return (folder_name, file_title).
 
     folder_name: Name (Year) [tmdbid-123]
     file_title : Name (Year)
+
+    title is the chosen display title (see pick_title).
+    The year and ID come from the TMDB show.
     """
 
-    name = sanitize_title(tmdb["name"])
+    name = sanitize_title(title)
     year = (tmdb.get("first_air_date") or "")[:4]
 
     file_title = f"{name} ({year})" if year else name
@@ -2105,7 +2197,18 @@ def main() -> int:
             tmdb_api_key,
         )
 
-    folder_name, anime_title = build_names(tmdb)
+    title, title_source = pick_title(
+        tmdb["name"],
+        fetch_tmdb_alternative_titles(
+            tmdb["id"],
+            tmdb_api_key,
+        ),
+    )
+
+    folder_name, anime_title = build_names(
+        tmdb,
+        title,
+    )
 
     if args.season is not None:
         season_override = args.season
@@ -2188,7 +2291,13 @@ def main() -> int:
         f"{series.target.get('media_type', '?')})"
     )
     print(
-        f"TMDB   : {tmdb['name']} -> {folder_name}"
+        f"TMDB   : {tmdb['name']} (id {tmdb['id']})"
+    )
+    print(
+        f"TITLE  : {title} [{title_source}]"
+    )
+    print(
+        f"FOLDER : {folder_name}"
     )
     print(
         f"SEASON : {season_override} ({season_source})"
