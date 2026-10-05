@@ -1031,7 +1031,11 @@ def detect_episode(
         (season, episode, special_type)
     """
 
-    stem = Path(filename).stem
+    # The caller passes the cleaned stem.  Do not apply Path.stem here:
+    # titles containing a dot (for example ``Title. - S01E01``) would be
+    # truncated at that dot because the trailing episode tag looks like a
+    # file extension.
+    stem = filename
 
     # ========================================================
     # SPECIAL / OVA / MOVIE
