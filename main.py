@@ -7,7 +7,10 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
+
+import requests
 
 
 # ============================================================
@@ -42,6 +45,15 @@ ENV_FILENAME = ".env"
 
 ENV_FINISHED_FOLDER_KEY = "FINISHED_FOLDER_PATH"
 ENV_SEARCH_PATHS_KEY = "SEARCH_PATHS"
+ENV_MAL_CLIENT_ID_KEY = "MAL_CLIENT_ID"
+ENV_TMDB_API_KEY_KEY = "TMDB_API_KEY"
+
+MAL_API_URL = "https://api.myanimelist.net/v2/anime"
+TMDB_API_URL = "https://api.themoviedb.org/3"
+REQUEST_TIMEOUT = 15
+
+# MAL media types counted as a regular season.
+SEASON_MEDIA_TYPES = {"tv", "ona"}
 
 RESOLUTION_PATTERN = re.compile(
     r"\b(?:"
@@ -222,6 +234,291 @@ def get_search_paths() -> list[Path]:
 
 
 # ============================================================
+# MYANIMELIST / TMDB
+# ============================================================
+
+@dataclass
+class SeriesInfo:
+    """Result of walking the MyAnimeList prequel chain."""
+
+    # The MAL entry entered by the user.
+    target: dict
+
+    # First season of the series (used for the TMDB search).
+    first: dict
+
+    # Season number of target. 0 = not a regular season.
+    season: int
+
+
+def get_api_key(env_key: str) -> str:
+    """Return a required API key from .env, or exit."""
+
+    value = load_env_file().get(env_key, "").strip()
+
+    if not value:
+        raise SystemExit(
+            f"[ERROR] {env_key} is not set in {ENV_FILENAME}."
+        )
+
+    return value
+
+
+def api_get(
+    url: str,
+    params: dict | None = None,
+    headers: dict | None = None,
+) -> dict:
+    """GET a JSON endpoint. Exits with a short error on failure."""
+
+    try:
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+
+        return response.json()
+
+    except requests.RequestException as error:
+
+        status = getattr(
+            error.response,
+            "status_code",
+            None,
+        )
+
+        detail = (
+            f"HTTP {status}"
+            if status
+            else type(error).__name__
+        )
+
+        # Do not print the exception itself:
+        # it can contain the API key in the URL.
+        raise SystemExit(
+            f"[ERROR] Request failed ({detail}): {url}"
+        ) from None
+
+
+def fetch_mal_anime(
+    mal_id: int,
+    client_id: str,
+) -> dict:
+    """Fetch one anime entry from MyAnimeList."""
+
+    return api_get(
+        f"{MAL_API_URL}/{mal_id}",
+        params={
+            "fields": (
+                "alternative_titles,related_anime,"
+                "media_type,start_date"
+            ),
+        },
+        headers={"X-MAL-CLIENT-ID": client_id},
+    )
+
+
+def resolve_mal_series(
+    mal_id: int,
+    client_id: str,
+) -> SeriesInfo:
+    """
+    Follow "prequel" relations back to the first season.
+
+    Season number = number of tv/ona entries in the chain
+    (the entered entry included). Movies/OVAs/specials in the
+    chain are walked through but not counted.
+
+    If the entered entry itself is not tv/ona, season is 0.
+    """
+
+    chain: list[dict] = []
+    visited: set[int] = set()
+
+    current = fetch_mal_anime(mal_id, client_id)
+
+    while current["id"] not in visited:
+
+        visited.add(current["id"])
+        chain.append(current)
+
+        prequels = [
+            related["node"]["id"]
+            for related in current.get("related_anime", [])
+            if related["relation_type"] == "prequel"
+        ]
+
+        if not prequels:
+            break
+
+        current = fetch_mal_anime(
+            prequels[0],
+            client_id,
+        )
+
+    target = chain[0]
+
+    seasons = [
+        entry
+        for entry in chain
+        if entry.get("media_type") in SEASON_MEDIA_TYPES
+    ]
+
+    if target.get("media_type") in SEASON_MEDIA_TYPES:
+        season = len(seasons)
+    else:
+        season = 0
+
+    first = seasons[-1] if seasons else chain[-1]
+
+    return SeriesInfo(
+        target=target,
+        first=first,
+        season=season,
+    )
+
+
+def pick_tmdb_result(
+    results: list[dict],
+    year: str,
+) -> dict:
+    """
+    Pick from the top 5 results.
+
+    Prefer the first result whose first_air_date year matches
+    the MAL start year, otherwise the top result.
+    """
+
+    top = results[:5]
+
+    if year:
+        for result in top:
+            if (result.get("first_air_date") or "")[:4] == year:
+                return result
+
+    return top[0]
+
+
+def search_tmdb_tv(
+    first: dict,
+    api_key: str,
+) -> dict:
+    """Search TMDB for the first season's MAL titles."""
+
+    titles = first.get("alternative_titles", {})
+    year = (first.get("start_date") or "")[:4]
+
+    queries: list[str] = []
+
+    for query in (
+        titles.get("en"),
+        first.get("title"),
+        titles.get("ja"),
+    ):
+        if query and query not in queries:
+            queries.append(query)
+
+    for query in queries:
+
+        data = api_get(
+            f"{TMDB_API_URL}/search/tv",
+            params={
+                "query": query,
+                "api_key": api_key,
+            },
+        )
+
+        results = data.get("results", [])
+
+        if results:
+            return pick_tmdb_result(results, year)
+
+    raise SystemExit(
+        "[ERROR] No TMDB match found. "
+        "Retry with --tmdb-id <id>."
+    )
+
+
+def fetch_tmdb_tv(
+    tmdb_id: int,
+    api_key: str,
+) -> dict:
+    """Fetch a TMDB TV show by ID."""
+
+    return api_get(
+        f"{TMDB_API_URL}/tv/{tmdb_id}",
+        params={"api_key": api_key},
+    )
+
+
+def sanitize_title(title: str) -> str:
+    """
+    Make a TMDB title filesystem-safe.
+
+    "Kaguya-sama: Love Is War" -> "Kaguya-sama - Love Is War"
+    """
+
+    title = re.sub(r"\s*:\s*", " - ", title)
+    title = re.sub(r'[<>"/\\|?*]', "", title)
+    title = re.sub(r"\s+", " ", title)
+
+    return title.strip(" .")
+
+
+def build_names(tmdb: dict) -> tuple[str, str]:
+    """
+    Return (folder_name, file_title).
+
+    folder_name: Name (Year) [tmdbid-123]
+    file_title : Name (Year)
+    """
+
+    name = sanitize_title(tmdb["name"])
+    year = (tmdb.get("first_air_date") or "")[:4]
+
+    file_title = f"{name} ({year})" if year else name
+
+    return (
+        f"{file_title} [tmdbid-{tmdb['id']}]",
+        file_title,
+    )
+
+
+def parse_mal_id(text: str) -> int | None:
+    """Accept a MyAnimeList URL or a plain numeric ID."""
+
+    match = (
+        re.search(r"myanimelist\.net/anime/(\d+)", text)
+        or re.fullmatch(r"(\d+)", text.strip())
+    )
+
+    return int(match.group(1)) if match else None
+
+
+def ask_for_mal_id() -> int:
+    """Ask for a MyAnimeList URL or ID."""
+
+    while True:
+
+        answer = input(
+            "MyAnimeList URL or ID: "
+        ).strip()
+
+        mal_id = parse_mal_id(answer)
+
+        if mal_id:
+            return mal_id
+
+        print(
+            "Invalid input. Examples: 62542 or "
+            "https://myanimelist.net/anime/62542/Grand_Blue_Season_3"
+        )
+
+
+# ============================================================
 # TEXT CLEANING
 # ============================================================
 
@@ -383,12 +680,39 @@ def ask_for_source_folder() -> Path:
     while True:
 
         folder_name = input(
-            "Folder name: "
-        ).strip()
+            "Folder name or full path: "
+        ).strip().strip("'\"")
 
         if not folder_name:
             print(
                 "Folder name cannot be empty."
+            )
+            continue
+
+        # ----------------------------------------------------
+        # Full/relative path: use it directly.
+        # ----------------------------------------------------
+
+        if "/" in folder_name or folder_name.startswith(("~", ".")):
+
+            direct = Path(folder_name).expanduser()
+
+            if direct.is_dir():
+                resolved = direct.resolve()
+
+                print()
+                print(
+                    f"Using: {resolved}"
+                )
+
+                return resolved
+
+            print()
+            print(
+                "[ERROR] Folder does not exist:"
+            )
+            print(
+                f"        {direct}"
             )
             continue
 
@@ -570,7 +894,11 @@ def detect_episode(
         flags=re.IGNORECASE,
     )
 
-    if special_match:
+    # An explicit S01E01 tag wins over keywords in the title.
+    if special_match and not re.search(
+        r"[Ss]\d{1,2}[Ee]\d{1,3}",
+        stem,
+    ):
         return (
             0,
             None,
@@ -758,15 +1086,16 @@ def process_file(
     )
 
     # --------------------------------------------------------
-    # Apply manual season override.
+    # Apply season from MyAnimeList (or --season).
     #
-    # Explicit S01E01-style season detection takes priority.
+    # Overrides the season in the filename, except for
+    # specials and explicit S00 files, which stay in Season 0.
     # --------------------------------------------------------
 
     if (
         season_override is not None
-        and season is None
         and special_type is None
+        and season != 0
     ):
         season = season_override
 
@@ -1556,6 +1885,33 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    parser.add_argument(
+        "--season",
+        type=int,
+        help=(
+            "Override the season number "
+            "detected from MyAnimeList."
+        ),
+    )
+
+    parser.add_argument(
+        "--tmdb-id",
+        type=int,
+        help=(
+            "Use this TMDB TV show ID "
+            "instead of searching."
+        ),
+    )
+
+    parser.add_argument(
+        "--no-move",
+        action="store_true",
+        help=(
+            "Do not move the result to "
+            "FINISHED_FOLDER_PATH."
+        ),
+    )
+
     return parser
 
 
@@ -1718,37 +2074,48 @@ def main() -> int:
     source_root = ask_for_source_folder()
 
     # --------------------------------------------------------
-    # Ask for anime title.
+    # Ask for MyAnimeList URL / ID.
     # --------------------------------------------------------
 
-    while True:
+    mal_id = ask_for_mal_id()
 
-        raw_anime_title = input(
-            "Anime title: "
-        ).strip()
+    # --------------------------------------------------------
+    # Look up MyAnimeList + TMDB.
+    # --------------------------------------------------------
 
-        anime_title = clean_display_title(
-            raw_anime_title
+    mal_client_id = get_api_key(ENV_MAL_CLIENT_ID_KEY)
+    tmdb_api_key = get_api_key(ENV_TMDB_API_KEY_KEY)
+
+    print()
+    print("Fetching metadata...")
+
+    series = resolve_mal_series(
+        mal_id,
+        mal_client_id,
+    )
+
+    if args.tmdb_id:
+        tmdb = fetch_tmdb_tv(
+            args.tmdb_id,
+            tmdb_api_key,
+        )
+    else:
+        tmdb = search_tmdb_tv(
+            series.first,
+            tmdb_api_key,
         )
 
-        if anime_title:
-            break
+    folder_name, anime_title = build_names(tmdb)
 
-        print(
-            "Anime title cannot be empty."
-        )
+    if args.season is not None:
+        season_override = args.season
+        season_source = "--season"
+    else:
+        season_override = series.season
+        season_source = "MAL prequel chain"
 
-    # --------------------------------------------------------
-    # Ask for season.
-    # --------------------------------------------------------
-
-    season_override = ask_for_season()
-
-    # --------------------------------------------------------
-    # Ask for optional season/arc title.
-    # --------------------------------------------------------
-
-    season_title = ask_for_season_title()
+    # Season/arc titles are no longer used.
+    season_title = ""
 
     # --------------------------------------------------------
     # Load configuration.
@@ -1774,7 +2141,7 @@ def main() -> int:
 
     destination_root = (
         source_root.parent
-        / anime_title
+        / folder_name
     )
 
     # --------------------------------------------------------
@@ -1806,6 +2173,35 @@ def main() -> int:
         finished_folder_path,
         args.review,
     )
+
+    # --------------------------------------------------------
+    # Metadata used for the rename.
+    # --------------------------------------------------------
+
+    print("=" * 70)
+    print("METADATA")
+    print("=" * 70)
+
+    print(
+        f"MAL    : {series.target['title']} "
+        f"(id {mal_id}, "
+        f"{series.target.get('media_type', '?')})"
+    )
+    print(
+        f"TMDB   : {tmdb['name']} -> {folder_name}"
+    )
+    print(
+        f"SEASON : {season_override} ({season_source})"
+    )
+
+    if args.review:
+        print()
+        print(
+            "If the TMDB match is wrong, answer N and "
+            "rerun with --tmdb-id."
+        )
+
+    print()
 
     # --------------------------------------------------------
     # Find video files.
@@ -1989,12 +2385,23 @@ def main() -> int:
     print("FINISHED FOLDER")
     print("=" * 70)
 
-    finished_move_success = (
-        move_finished_folder(
-            finished_folder=destination_root,
-            destination_root=finished_folder_path,
+    if args.no_move:
+
+        finished_move_success = True
+
+        print()
+        print(
+            "Skipped (--no-move)."
         )
-    )
+
+    else:
+
+        finished_move_success = (
+            move_finished_folder(
+                finished_folder=destination_root,
+                destination_root=finished_folder_path,
+            )
+        )
 
     # ========================================================
     # FINAL STATUS
