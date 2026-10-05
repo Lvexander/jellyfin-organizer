@@ -529,51 +529,60 @@ def fetch_tmdb_alternative_titles(
 def pick_title(
     tmdb_name: str,
     alternative_titles: list[dict],
-    preferred_title: str = "",
 ) -> tuple[str, str]:
     """
     Choose the title used for the folder and filenames.
 
     Priority:
 
-        1. MyAnimeList English title, when available
-        2. United States "Short Title"
-        3. Japan "romaji" title
+        1. United States "Short Title"
+        2. Japan "romaji" title
+        3. Other Japanese title explicitly marked as romaji
         4. The regular TMDB name
 
     Returns (title, source label).
     """
 
-    def find(country: str, title_type: str) -> str | None:
-        for item in alternative_titles:
+    us_short_titles = [
+        item
+        for item in alternative_titles
+        if (
+            item.get("iso_3166_1") == "US"
+            and (item.get("type") or "").strip().lower() == "short title"
+            and item.get("title")
+        )
+    ]
 
-            item_type = (
-                (item.get("type") or "")
-                .strip()
-                .lower()
-            )
+    if us_short_titles:
+        return us_short_titles[0]["title"], "US Short Title"
 
-            if (
-                item.get("iso_3166_1") == country
-                and item_type == title_type
-                and item.get("title")
-            ):
-                return item["title"]
+    japanese_romaji = [
+        item
+        for item in alternative_titles
+        if (
+            item.get("iso_3166_1") == "JP"
+            and "romaji" in (item.get("type") or "").strip().lower()
+            and item.get("title")
+        )
+    ]
 
-        return None
+    # Prefer the general "romaji" type over other romaji-labeled titles,
+    # then prefer an unaccented spelling when TMDB provides one.
+    japanese_romaji.sort(
+        key=lambda item: (
+            (item.get("type") or "").strip().lower() != "romaji",
+            bool(re.search(r"[āēīōūĀĒĪŌŪ]", item["title"])),
+        )
+    )
 
-    if preferred_title.strip():
-        return preferred_title.strip(), "MAL English title"
-
-    short_title = find("US", "short title")
-
-    if short_title:
-        return short_title, "US Short Title"
-
-    romaji = find("JP", "romaji")
-
-    if romaji:
-        return romaji, "JP romaji"
+    if japanese_romaji:
+        title = japanese_romaji[0]["title"]
+        # Render Japanese long vowels in plain ASCII Hepburn spelling.
+        title = title.translate(str.maketrans({
+            "ā": "aa", "ē": "ee", "ī": "ii", "ō": "ou", "ū": "uu",
+            "Ā": "Aa", "Ē": "Ee", "Ī": "Ii", "Ō": "Ou", "Ū": "Uu",
+        }))
+        return title, "JP romaji"
 
     return tmdb_name, "TMDB name"
 
@@ -2361,19 +2370,12 @@ def main() -> int:
             tmdb_api_key,
         )
 
-    title_entry = (
-        series.target if series.is_movie else series.first
-    )
-
     title, title_source = pick_title(
         tmdb_name(tmdb),
         fetch_tmdb_alternative_titles(
             tmdb["id"],
             tmdb_api_key,
             kind,
-        ),
-        preferred_title=(
-            title_entry.get("alternative_titles", {}).get("en") or ""
         ),
     )
 
