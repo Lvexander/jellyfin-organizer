@@ -608,17 +608,15 @@ def build_names(
     """
     Return (folder_name, file_title).
 
-    folder_name: Name (Year) [tmdbid-123]
-    file_title : Name (Year)
+    folder_name: Name [tmdbid-123]
+    file_title : Name
 
     title is the chosen display title (see pick_title).
-    The year and ID come from the TMDB show.
+    The ID comes from the TMDB show. The year is used for matching only.
     """
 
     name = sanitize_title(title)
-    year = tmdb_date(tmdb)[:4]
-
-    file_title = f"{name} ({year})" if year else name
+    file_title = name
 
     return (
         f"{file_title} [tmdbid-{tmdb['id']}]",
@@ -1520,7 +1518,7 @@ def process_movie_files(
     """
     Name a standalone movie for Jellyfin:
 
-        Title (Year) [tmdbid-ID]/Title (Year).ext
+        Title [tmdbid-ID]/Title.ext
 
     Only the largest video file is treated as the movie.
     Any other video files are left untouched.
