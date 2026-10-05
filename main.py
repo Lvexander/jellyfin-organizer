@@ -549,8 +549,9 @@ def pick_title(
 
         1. United States "Short Title"
         2. Japan "romaji" title
-        3. Other Japanese title explicitly marked as romaji
-        4. The regular TMDB name
+        3. Other Japanese romaji title, even without a romaji type label
+        4. Shortest United States title
+        5. The regular TMDB name
 
     Returns (title, source label).
     """
@@ -595,6 +596,30 @@ def pick_title(
             "Ā": "Aa", "Ē": "Ee", "Ī": "Ii", "Ō": "Ou", "Ū": "Uu",
         }))
         return title, "JP romaji"
+
+    japanese_titles = [
+        item
+        for item in alternative_titles
+        if (
+            item.get("iso_3166_1") == "JP"
+            and item.get("title")
+            and not re.search(r"[\u3040-\u30ff\u3400-\u9fff]", item["title"])
+        )
+    ]
+
+    if japanese_titles:
+        # The explicitly labeled romaji options were considered above.
+        return min(japanese_titles, key=lambda item: len(item["title"]))["title"], "JP romaji"
+
+    us_titles = [
+        item
+        for item in alternative_titles
+        if item.get("iso_3166_1") == "US" and item.get("title")
+    ]
+
+    if us_titles:
+        shortest_us_title = min(us_titles, key=lambda item: len(item["title"]))
+        return shortest_us_title["title"], "US title"
 
     return tmdb_name, "TMDB name"
 

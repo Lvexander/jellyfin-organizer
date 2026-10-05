@@ -313,7 +313,9 @@ The name used in the folder and filenames is then chosen from that show's TMDB a
 
 1. United States **Short Title**
 2. Japan **romaji** title
-3. The regular TMDB name, if neither of the above exists
+3. Another Japanese romaji title, even when TMDB does not label it as romaji
+4. The shortest United States title
+5. The regular TMDB name
 
 For example, a show with the US short title `Hell Mode` and the Japan romaji title `Hell Mode: Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` is named `Hell Mode`. A show with only the romaji title is named `Hell Mode - Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` (the colon is replaced, see below). The year helps match the show, while the TMDB ID is included in the folder name.
 
