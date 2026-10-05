@@ -2,13 +2,13 @@
 
 A Python script for organizing downloaded anime, movies, and TV show video files into a Jellyfin-compatible folder structure.
 
-Show title, release year, and season number are resolved automatically from **MyAnimeList** and **TMDB**, so you only enter the folder and a MyAnimeList URL or ID.
+Show title and season number are resolved automatically from **MyAnimeList** and **TMDB**, so you only enter the folder and a MyAnimeList URL or ID. The release year helps match the show, but is left out of folder and file names.
 
 The script can:
 
 - Find the source folder by name or by full path.
 - Look up the anime on MyAnimeList and work out the season number from its prequel chain.
-- Match the anime on TMDB and build a Jellyfin folder name: `Title (Year) [tmdbid-123]`.
+- Match the anime on TMDB and build a Jellyfin folder name: `Title [tmdbid-123]`.
 - Automatically detect episode numbers.
 - Optionally override the season number or the TMDB match.
 - Clean release metadata from filenames.
@@ -77,12 +77,12 @@ The script will create:
 
 ```text
 ~/storage/videos/Anime/
-└── Anime Title (2023) [tmdbid-123456]/
+└── Anime Title [tmdbid-123456]/
     ├── Season 01/
-    │   ├── Anime Title (2023) - S01E01.mkv
-    │   └── Anime Title (2023) - S01E02.mkv
+    │   ├── Anime Title - S01E01.mkv
+    │   └── Anime Title - S01E02.mkv
     └── Season 02/
-        └── Anime Title (2023) - S02E01.mkv
+        └── Anime Title - S02E01.mkv
 ```
 
 ### `SEARCH_PATHS`
@@ -201,7 +201,7 @@ METADATA
 MAL    : Grand Blue Season 3 (id 62542, tv)
 TMDB   : Grand Blue (id 78203)
 TITLE  : Grand Blue [US Short Title]
-FOLDER : Grand Blue (2018) [tmdbid-78203]
+FOLDER : Grand Blue [tmdbid-78203]
 SEASON : 3 (MAL prequel chain)
 
 If the TMDB match is wrong, answer N and rerun with --tmdb-id.
@@ -315,15 +315,15 @@ The name used in the folder and filenames is then chosen from that show's TMDB a
 2. Japan **romaji** title
 3. The regular TMDB name, if neither of the above exists
 
-For example, a show with the US short title `Hell Mode` and the Japan romaji title `Hell Mode: Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` is named `Hell Mode`. A show with only the romaji title is named `Hell Mode - Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` (the colon is replaced, see below). The year and TMDB ID always come from the matched show.
+For example, a show with the US short title `Hell Mode` and the Japan romaji title `Hell Mode: Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` is named `Hell Mode`. A show with only the romaji title is named `Hell Mode - Yarikomizuki no Gamer wa Hai Settei no Isekai de Musou suru` (the colon is replaced, see below). The year helps match the show, while the TMDB ID is included in the folder name.
 
 The result is turned into:
 
 | Item | Format | Example |
 | --- | --- | --- |
-| Folder | `Title (Year) [tmdbid-ID]` | `Grand Blue (2018) [tmdbid-78203]` |
+| Folder | `Title [tmdbid-ID]` | `Grand Blue [tmdbid-78203]` |
 | Season folder | `Season NN` | `Season 03` |
-| File | `Title (Year) - SxxExx.ext` | `Grand Blue (2018) - S03E01.mkv` |
+| File | `Title - SxxExx.ext` | `Grand Blue - S03E01.mkv` |
 
 Colons in titles are replaced with ` - ` and characters that are invalid in filenames are removed, while hyphens are kept:
 
@@ -345,9 +345,9 @@ Use `--review` so you can check the match before anything is moved.
 Season `0` is used for specials/OVAs. Those files are placed in a folder named:
 
 ```text
-Anime Title (Year) [tmdbid-123456]/
+Anime Title [tmdbid-123456]/
 └── Season/
-    └── Anime Title (Year) - S00E01.mkv
+    └── Anime Title - S00E01.mkv
 ```
 
 The folder name is `Season`, but the filename still uses Jellyfin-style `S00E##` numbering.
@@ -363,8 +363,8 @@ If the MyAnimeList entry is a **movie** and its prequel chain contains no TV/ONA
 - No season folder is created.
 
 ```text
-Movie Title (Year) [tmdbid-123456]/
-└── Movie Title (Year).mkv
+Movie Title [tmdbid-123456]/
+└── Movie Title.mkv
 ```
 
 If the folder contains several video files, only the largest one is treated as the movie. The others are skipped and left in the source folder, so the source folder is not deleted.
@@ -445,10 +445,10 @@ Filenames containing `OVA`, `Movie`, or `Special` (and no `SxxExx` tag) are trea
 They are placed in the specials folder:
 
 ```text
-Anime Title (Year) [tmdbid-123456]/
+Anime Title [tmdbid-123456]/
 └── Season/
-    ├── Anime Title (Year) - S00E01.mkv
-    └── Anime Title (Year) - S00E02.mkv
+    ├── Anime Title - S00E01.mkv
+    └── Anime Title - S00E02.mkv
 ```
 
 If existing special episode numbers are already present, the script chooses the next available `S00E##` number.
@@ -510,7 +510,7 @@ The script supports adding new seasons to an anime that already exists in the Je
 For example:
 
 ```text
-~/storage/videos/Anime/Grand Blue (2018) [tmdbid-78203]/
+~/storage/videos/Anime/Grand Blue [tmdbid-78203]/
 └── Season 01/
     └── ...
 ```
@@ -520,7 +520,7 @@ You can process another folder containing Season 02, entering the MyAnimeList ID
 The script will merge the new season into the existing anime folder:
 
 ```text
-~/storage/videos/Anime/Grand Blue (2018) [tmdbid-78203]/
+~/storage/videos/Anime/Grand Blue [tmdbid-78203]/
 ├── Season 01/
 │   └── ...
 └── Season 02/
@@ -546,7 +546,7 @@ For example, if the existing folder is:
 enter its path (or name) and the MyAnimeList ID of the season it contains. The script moves the episodes into:
 
 ```text
-~/storage/videos/Anime/Grand Blue (2018) [tmdbid-78203]/
+~/storage/videos/Anime/Grand Blue [tmdbid-78203]/
 ```
 
 The old folder is removed only after the files have been successfully processed.
