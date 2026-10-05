@@ -250,6 +250,9 @@ class SeriesInfo:
     # Season number of target. 0 = not a regular season.
     season: int
 
+    # True for a standalone movie (no TV/ONA entry in its chain).
+    is_movie: bool = False
+
 
 def get_api_key(env_key: str) -> str:
     """Return a required API key from .env, or exit."""
@@ -397,6 +400,10 @@ def resolve_mal_series(
         target=target,
         first=first,
         season=season,
+        is_movie=(
+            target.get("media_type") == "movie"
+            and not seasons
+        ),
     )
 
 
@@ -415,26 +422,33 @@ def pick_tmdb_result(
 
     if year:
         for result in top:
-            if (result.get("first_air_date") or "")[:4] == year:
+            date = (
+                result.get("first_air_date")
+                or result.get("release_date")
+                or ""
+            )
+
+            if date[:4] == year:
                 return result
 
     return top[0]
 
 
-def search_tmdb_tv(
-    first: dict,
+def search_tmdb(
+    kind: str,
+    entry: dict,
     api_key: str,
 ) -> dict:
-    """Search TMDB for the first season's MAL titles."""
+    """Search TMDB ("tv" or "movie") using a MAL entry's titles."""
 
-    titles = first.get("alternative_titles", {})
-    year = (first.get("start_date") or "")[:4]
+    titles = entry.get("alternative_titles", {})
+    year = (entry.get("start_date") or "")[:4]
 
     queries: list[str] = []
 
     for query in (
         titles.get("en"),
-        first.get("title"),
+        entry.get("title"),
         titles.get("ja"),
     ):
         if query and query not in queries:
@@ -443,7 +457,7 @@ def search_tmdb_tv(
     for query in queries:
 
         data = api_get(
-            f"{TMDB_API_URL}/search/tv",
+            f"{TMDB_API_URL}/search/{kind}",
             params={
                 "query": query,
                 "api_key": api_key,
@@ -461,21 +475,39 @@ def search_tmdb_tv(
     )
 
 
-def fetch_tmdb_tv(
+def fetch_tmdb(
+    kind: str,
     tmdb_id: int,
     api_key: str,
 ) -> dict:
-    """Fetch a TMDB TV show by ID."""
+    """Fetch a TMDB show ("tv") or movie ("movie") by ID."""
 
     return api_get(
-        f"{TMDB_API_URL}/tv/{tmdb_id}",
+        f"{TMDB_API_URL}/{kind}/{tmdb_id}",
         params={"api_key": api_key},
+    )
+
+
+def tmdb_name(tmdb: dict) -> str:
+    """TV shows use "name", movies use "title"."""
+
+    return tmdb.get("name") or tmdb.get("title") or ""
+
+
+def tmdb_date(tmdb: dict) -> str:
+    """TV shows use "first_air_date", movies use "release_date"."""
+
+    return (
+        tmdb.get("first_air_date")
+        or tmdb.get("release_date")
+        or ""
     )
 
 
 def fetch_tmdb_alternative_titles(
     tmdb_id: int,
     api_key: str,
+    kind: str = "tv",
 ) -> list[dict]:
     """
     Fetch TMDB alternative titles.
@@ -486,11 +518,12 @@ def fetch_tmdb_alternative_titles(
     """
 
     data = api_get(
-        f"{TMDB_API_URL}/tv/{tmdb_id}/alternative_titles",
+        f"{TMDB_API_URL}/{kind}/{tmdb_id}/alternative_titles",
         params={"api_key": api_key},
     )
 
-    return data.get("results", [])
+    # TV shows return "results", movies return "titles".
+    return data.get("results") or data.get("titles") or []
 
 
 def pick_title(
@@ -569,7 +602,7 @@ def build_names(
     """
 
     name = sanitize_title(title)
-    year = (tmdb.get("first_air_date") or "")[:4]
+    year = tmdb_date(tmdb)[:4]
 
     file_title = f"{name} ({year})" if year else name
 
@@ -1464,6 +1497,126 @@ def process_files(
     )
 
 
+def process_movie_files(
+    files: list[Path],
+    destination_root: Path,
+    file_title: str,
+    execute: bool,
+) -> tuple[int, int, bool]:
+    """
+    Name a standalone movie for Jellyfin:
+
+        Title (Year) [tmdbid-ID]/Title (Year).ext
+
+    Only the largest video file is treated as the movie.
+    Any other video files are left untouched.
+
+    Returns:
+
+        processed
+        skipped
+        safe_to_delete_source
+    """
+
+    ordered = sorted(
+        files,
+        key=lambda path: path.stat().st_size,
+        reverse=True,
+    )
+
+    processed = 0
+    skipped = 0
+    safe_to_delete_source = True
+
+    for index, file_path in enumerate(ordered):
+
+        if index > 0:
+
+            print()
+            print(
+                "[SKIP] Extra video file "
+                "(only the largest file is the movie):"
+            )
+            print(
+                f"       {file_path}"
+            )
+
+            skipped += 1
+
+            continue
+
+        destination = (
+            destination_root
+            / f"{file_title}{file_path.suffix.lower()}"
+        )
+
+        print()
+        print(
+            f"SOURCE : {file_path}"
+        )
+        print(
+            "TYPE   : Movie"
+        )
+        print(
+            f"DEST   : {destination}"
+        )
+
+        try:
+            same_file = (
+                file_path.resolve()
+                == destination.resolve()
+            )
+        except OSError:
+            same_file = (
+                file_path == destination
+            )
+
+        if same_file:
+
+            print(
+                "STATUS : Already correctly named."
+            )
+
+            processed += 1
+
+            continue
+
+        if destination.exists():
+
+            print()
+            print(
+                "[WARNING] Destination already exists."
+            )
+            print(
+                "  SKIPPING SOURCE FILE."
+            )
+
+            skipped += 1
+            safe_to_delete_source = False
+
+            continue
+
+        if execute:
+
+            destination_root.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            shutil.move(
+                str(file_path),
+                str(destination),
+            )
+
+        processed += 1
+
+    return (
+        processed,
+        skipped,
+        safe_to_delete_source,
+    )
+
+
 # ============================================================
 # SOURCE FOLDER CLEANUP
 # ============================================================
@@ -1990,8 +2143,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--tmdb-id",
         type=int,
         help=(
-            "Use this TMDB TV show ID "
-            "instead of searching."
+            "Use this TMDB ID (TV show, or movie for "
+            "standalone movies) instead of searching."
         ),
     )
 
@@ -2071,7 +2224,7 @@ def print_header(
     if season_override is None:
 
         print(
-            "Season             : Auto-detect"
+            "Season             : n/a (movie)"
         )
 
     else:
@@ -2186,22 +2339,29 @@ def main() -> int:
         mal_client_id,
     )
 
+    # Standalone movies are searched as TMDB movies,
+    # everything else as TMDB TV shows.
+    kind = "movie" if series.is_movie else "tv"
+
     if args.tmdb_id:
-        tmdb = fetch_tmdb_tv(
+        tmdb = fetch_tmdb(
+            kind,
             args.tmdb_id,
             tmdb_api_key,
         )
     else:
-        tmdb = search_tmdb_tv(
-            series.first,
+        tmdb = search_tmdb(
+            kind,
+            series.target if series.is_movie else series.first,
             tmdb_api_key,
         )
 
     title, title_source = pick_title(
-        tmdb["name"],
+        tmdb_name(tmdb),
         fetch_tmdb_alternative_titles(
             tmdb["id"],
             tmdb_api_key,
+            kind,
         ),
     )
 
@@ -2210,7 +2370,10 @@ def main() -> int:
         title,
     )
 
-    if args.season is not None:
+    if series.is_movie:
+        season_override = None
+        season_source = "n/a (movie)"
+    elif args.season is not None:
         season_override = args.season
         season_source = "--season"
     else:
@@ -2291,7 +2454,7 @@ def main() -> int:
         f"{series.target.get('media_type', '?')})"
     )
     print(
-        f"TMDB   : {tmdb['name']} (id {tmdb['id']})"
+        f"TMDB   : {tmdb_name(tmdb)} (id {tmdb['id']}, {kind})"
     )
     print(
         f"TITLE  : {title} [{title_source}]"
@@ -2299,9 +2462,14 @@ def main() -> int:
     print(
         f"FOLDER : {folder_name}"
     )
-    print(
-        f"SEASON : {season_override} ({season_source})"
-    )
+    if series.is_movie:
+        print(
+            "TYPE   : Movie (standalone, no season folder)"
+        )
+    else:
+        print(
+            f"SEASON : {season_override} ({season_source})"
+        )
 
     if args.review:
         print()
@@ -2334,6 +2502,26 @@ def main() -> int:
         f"Found {len(files)} video file(s)."
     )
 
+    def run(execute: bool) -> tuple[int, int, bool]:
+        """Process the files as a movie or as series episodes."""
+
+        if series.is_movie:
+            return process_movie_files(
+                files=files,
+                destination_root=destination_root,
+                file_title=anime_title,
+                execute=execute,
+            )
+
+        return process_files(
+            files=files,
+            destination_root=destination_root,
+            anime_title=anime_title,
+            execute=execute,
+            season_override=season_override,
+            season_title=season_title,
+        )
+
     # ========================================================
     # REVIEW MODE
     # ========================================================
@@ -2349,14 +2537,7 @@ def main() -> int:
             preview_processed,
             preview_skipped,
             preview_safe,
-        ) = process_files(
-            files=files,
-            destination_root=destination_root,
-            anime_title=anime_title,
-            execute=False,
-            season_override=season_override,
-            season_title=season_title,
-        )
+        ) = run(False)
 
         print_summary(
             preview_processed,
@@ -2413,14 +2594,7 @@ def main() -> int:
         processed,
         skipped,
         safe_to_delete_source,
-    ) = process_files(
-        files=files,
-        destination_root=destination_root,
-        anime_title=anime_title,
-        execute=True,
-        season_override=season_override,
-        season_title=season_title,
-    )
+    ) = run(True)
 
     # --------------------------------------------------------
     # Summary.

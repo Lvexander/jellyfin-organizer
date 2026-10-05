@@ -160,7 +160,7 @@ The operation is then executed automatically.
 | --- | --- |
 | `--review` | Show a preview and ask for confirmation before changing anything. |
 | `--season N` | Use season `N` instead of the season detected from MyAnimeList. |
-| `--tmdb-id ID` | Use this TMDB TV show ID instead of searching TMDB. |
+| `--tmdb-id ID` | Use this TMDB ID instead of searching TMDB (a TV show ID, or a movie ID for standalone movies). |
 | `--no-move` | Do not move the result to `FINISHED_FOLDER_PATH`. |
 
 Examples:
@@ -351,6 +351,25 @@ Anime Title (Year) [tmdbid-123456]/
 ```
 
 The folder name is `Season`, but the filename still uses Jellyfin-style `S00E##` numbering.
+
+---
+
+# Standalone Movies
+
+If the MyAnimeList entry is a **movie** and its prequel chain contains no TV/ONA series, the script treats it as a Jellyfin movie instead of a series episode:
+
+- TMDB is searched as a **movie** (`--tmdb-id` is then a TMDB movie ID).
+- The title is chosen the same way: US Short Title, then Japan romaji, then the TMDB title.
+- No season folder is created.
+
+```text
+Movie Title (Year) [tmdbid-123456]/
+└── Movie Title (Year).mkv
+```
+
+If the folder contains several video files, only the largest one is treated as the movie. The others are skipped and left in the source folder, so the source folder is not deleted.
+
+A movie that is a sequel or side story of a TV series (its chain contains a TV/ONA entry) is not treated this way. It is placed in that series' Season 0 as a special.
 
 ---
 
