@@ -292,7 +292,7 @@ def api_get(
             if attempt < len(API_RETRY_DELAYS):
                 delay = API_RETRY_DELAYS[attempt]
                 print(
-                    f"[WARNING] API request failed. "
+                    f"[WARNING] {url} API request failed. "
                     f"Retrying in {delay} seconds "
                     f"({attempt + 1}/{len(API_RETRY_DELAYS)})."
                 )
