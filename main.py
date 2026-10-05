@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,6 +52,7 @@ ENV_TMDB_API_KEY_KEY = "TMDB_API_KEY"
 MAL_API_URL = "https://api.myanimelist.net/v2/anime"
 TMDB_API_URL = "https://api.themoviedb.org/3"
 REQUEST_TIMEOUT = 15
+API_RETRY_DELAYS = (5, 30, 60)
 
 # MAL media types counted as a regular season.
 SEASON_MEDIA_TYPES = {"tv", "ona"}
@@ -272,20 +274,30 @@ def api_get(
     params: dict | None = None,
     headers: dict | None = None,
 ) -> dict:
-    """GET a JSON endpoint. Exits with a short error on failure."""
+    """GET a JSON endpoint, retrying request failures before exiting."""
 
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT,
-        )
-        response.raise_for_status()
+    for attempt in range(len(API_RETRY_DELAYS) + 1):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
 
-        return response.json()
+            return response.json()
 
-    except requests.RequestException as error:
+        except requests.RequestException as error:
+            if attempt < len(API_RETRY_DELAYS):
+                delay = API_RETRY_DELAYS[attempt]
+                print(
+                    f"[WARNING] API request failed. "
+                    f"Retrying in {delay} seconds "
+                    f"({attempt + 1}/{len(API_RETRY_DELAYS)})."
+                )
+                time.sleep(delay)
+                continue
 
         status = getattr(
             error.response,

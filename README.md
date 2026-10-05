@@ -529,7 +529,7 @@ The script will merge the new season into the existing anime folder:
 
 The existing `Season 01` is preserved.
 
-Merging works because every season of the same show resolves to the **same TMDB title, year, and ID**, and therefore the same folder name. Existing library folders that were named without `[tmdbid-...]` will not be merged automatically; they are treated as different folders.
+Merging works because every season of the same show resolves to the **same TMDB title and ID**, and therefore the same folder name. Existing library folders that were named without `[tmdbid-...]` will not be merged automatically; they are treated as different folders.
 
 ---
 
