@@ -529,15 +529,17 @@ def fetch_tmdb_alternative_titles(
 def pick_title(
     tmdb_name: str,
     alternative_titles: list[dict],
+    preferred_title: str = "",
 ) -> tuple[str, str]:
     """
     Choose the title used for the folder and filenames.
 
     Priority:
 
-        1. United States "Short Title"
-        2. Japan "romaji" title
-        3. The regular TMDB name
+        1. MyAnimeList English title, when available
+        2. United States "Short Title"
+        3. Japan "romaji" title
+        4. The regular TMDB name
 
     Returns (title, source label).
     """
@@ -559,6 +561,9 @@ def pick_title(
                 return item["title"]
 
         return None
+
+    if preferred_title.strip():
+        return preferred_title.strip(), "MAL English title"
 
     short_title = find("US", "short title")
 
@@ -2356,12 +2361,19 @@ def main() -> int:
             tmdb_api_key,
         )
 
+    title_entry = (
+        series.target if series.is_movie else series.first
+    )
+
     title, title_source = pick_title(
         tmdb_name(tmdb),
         fetch_tmdb_alternative_titles(
             tmdb["id"],
             tmdb_api_key,
             kind,
+        ),
+        preferred_title=(
+            title_entry.get("alternative_titles", {}).get("en") or ""
         ),
     )
 
